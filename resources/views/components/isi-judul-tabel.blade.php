@@ -1,0 +1,1 @@
+<th align='center' style='border:1px solid #90AFC5'><b>{{ $namakolom }}</b></th>

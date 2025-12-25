@@ -1,0 +1,33 @@
+version: "1.0"
+
+services:
+  app:
+    build:
+      context: .
+    container_name: be-simas
+    ports:
+      - "5000:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - db
+    environment:
+      APP_ENV: local
+      APP_DEBUG: true
+
+  db:
+    image: postgres:16
+    container_name: db-simas
+    restart: always
+    environment:
+      POSTGRES_DB: simas
+      POSTGRES_USER: simas
+      POSTGRES_PASSWORD: simas
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "55432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:

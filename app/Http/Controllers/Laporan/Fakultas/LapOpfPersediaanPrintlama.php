@@ -1,0 +1,280 @@
+<?php
+
+namespace App\Http\Controllers\Laporan\Fakultas;
+
+use App\Http\Controllers\Controller;
+use App\Models\BarangKeluarDetailModel;
+use App\Models\BarangKeluarFakultasDetailModel;
+use App\Models\BarangMasukFakultasDetailModel;
+use App\Models\BarangMasukFakultasModel;
+use App\Models\BarangMasukModel;
+use App\Models\JabpenfkModel;
+use App\Models\LokasiModel;
+use App\Models\OpfkdetitmModel;
+use App\Models\OpsikFkDetModel;
+use App\Models\TempBarangMasukModel;
+use App\Models\User;
+use App\Models\VLapPosisi2Model;
+use App\Models\VLapPosisi3Model;
+use App\Models\VLapPosisi4Model;
+use Illuminate\Support\Facades\Crypt;
+use PDF;
+
+class LapOpfPersediaanPrint extends Controller
+{
+    Public Function index($filter)
+    {
+        $tgl_akhir = Crypt::decryptString($filter);
+        $user_id = auth()->user()->id;
+
+        $barislok = User::
+        join('fakultas_jabatan','users.id_fkj','=','fakultas_jabatan.id_fkj')
+        ->join('fakultas','fakultas_jabatan.id_fk','=','fakultas.id_fk')
+        ->where('users.id', $user_id)
+        ->first();
+
+        $datafakultas = User::join('fakultas_jabatan','users.id_fkj','=','fakultas_jabatan.id_fkj')
+            ->join('fakultas','fakultas_jabatan.id_fk','=','fakultas.id_fk')
+            ->where('users.id', $user_id)->first();  
+
+        $lokasi = $barislok->kd_lks;
+        $id_fk = $barislok->id_fk;
+
+        $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
+
+        $pejabatanpimpinan = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $datafakultas->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 1)->first();
+        $pejabatanop = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $datafakultas->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 2)->first();
+
+        $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','2')->count();
+        if($jumlah != 0)
+        {
+        $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','2');
+        $datadeletetbm->delete();  
+        }
+        $databarangmasukfakultas = BarangMasukFakultasModel::
+        where('kd_lks', '=', $lokasi )
+        ->where('tglperolehan_bmf', '<=', $tgl_akhir )
+        ->where('kd_brg', '=', '118103000160')
+        ->orderBy('tglperolehan_bmf','asc')
+        ->get();
+        foreach($databarangmasukfakultas as $barisbmf)
+        {
+            $jumlahopsik = OpsikFkDetModel::                    
+            join('opsik_fakultas','opsik_fakultas_detail.id_opfk','=','opsik_fakultas.id_opfk')
+            ->where('id_fk', '=', $id_fk)
+            ->where('kd_brg', '=', $barisbmf->kd_brg)
+            ->where('tgl_opfk', '<=', $tgl_akhir )
+            ->where('status_opfk', '=', 1 )
+            ->count();
+            //echo "$barisbmf->kd_brg = $jumlahbk = $jumlahopsik<br>";
+            if($jumlahopsik == 1)
+            {
+                $tjmlh_opsik = 0;
+
+                $databarangopsik = OpsikFkDetModel::                    
+                join('opsik_fakultas','opsik_fakultas_detail.id_opfk','=','opsik_fakultas.id_opfk')
+                ->where('id_fk', '=', $id_fk)
+                ->where('kd_brg', '=', $barisbmf->kd_brg)
+                ->where('tgl_opfk', '<=', $tgl_akhir )
+                ->get();
+
+                foreach($databarangopsik as $barisbarangopsik) 
+                {
+                    $tjmlh_opsik = 0;
+                    $databarangopsikdetailitem = OpfkdetitmModel::        
+                    join('barang_masuk_fakultas','opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
+                    ->where('opfik_fakultas_detail_item.id_bmf', '=', $barisbmf->id_bmf)
+                    ->where('id_opfkdet', '=', $barisbarangopsik->id_opfkdet)
+                    ->get();
+                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)                    
+                    {
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm + $tjmlh_opsik;
+                    }
+                    $datatbmf = new TempBarangMasukModel();                    
+                    $datatbmf->kd_brg = $barisbmf->kd_brg;
+                    $datatbmf->sisa_tbm = $tjmlh_opsik;
+                    $datatbmf->hrg_tbm = $barisopsikdetailitem->hrg_bmf;
+                    $datatbmf->kd_lks = $lokasi;
+                    $datatbmf->user_id = $user_id;
+                    $datatbmf->jns_tbm = 2;
+                    $datatbmf->save();
+
+                    //echo "$nocek = opsik = $barisbmf->kd_brg = $tjmlh_opsik = $barisbmf->hrg_bmf<br>";
+                }
+            }
+            else
+            {
+                $tjmlh_bkfd = 0;
+                $databarangkeluar = BarangKeluarFakultasDetailModel::
+                join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                ->where('id_bmf', '=', $barisbmf->id_bmf)
+                ->where('tglambil_bkf', '<=', $tgl_akhir )
+                ->get();
+                foreach($databarangkeluar as $barisbkfd)                    
+                {
+                    $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                }
+                $jmlh_awal_bmf = $barisbmf->jmlh_awal_bmf;
+
+                $sisa_tbmf = ($jmlh_awal_bmf - $tjmlh_bkfd) ;
+
+                $datatbmf = new TempBarangMasukModel();                    
+                $datatbmf->kd_brg = $barisbmf->kd_brg;
+                $datatbmf->sisa_tbm = $sisa_tbmf;
+                $datatbmf->hrg_tbm = $barisbmf->hrg_bmf;
+                $datatbmf->kd_lks = $lokasi;
+                $datatbmf->user_id = $user_id;
+                $datatbmf->jns_tbm = 2;
+                $datatbmf->save();
+
+                //echo "$nocek = tidak = $barisbmf->kd_brg = $sisa_tbmf = $barisbmf->hrg_bmf <br>";
+            }
+            //$nocek++;
+            
+        }
+       
+
+        function rupiah($angka){
+	
+            $hasil_rupiah = number_format($angka,0,',','.');
+            return $hasil_rupiah;
+         
+        }
+   
+        $tahunanggaran = substr($tgl_akhir, 0, 4);
+        PDF::SetTitle('Laporan Posisi Persedian Di Neraca');
+        PDF::SetMargins(10, 43.4, 10);
+        PDF::SetFont('times', '', 8);
+        // Define the header function
+        $tgl = \Carbon\Carbon::parse($tgl_akhir)->locale('id')->isoFormat('D MMMM Y');
+        $tgl = strtoupper($tgl);
+        $header = function() use ($tgl_akhir, $tahunanggaran, $datalokasi, $lokasi, $tgl) {
+            PDF::ln(5);
+            PDF::SetFont('times', 'b', 14);
+            PDF::Cell(0, 0, 'LAPORAN PERSEDIAN', 0, 1, 'C', 0, '', 0);
+            PDF::SetFont('times', 'b', 10);
+            PDF::Cell(0, 0, "UNTUK PERIODE YANG BERAKHIR TANGGAL $tgl", 0, 1, 'C', 0, '', 0);
+            PDF::Cell(0, 0, "TAHUN ANGGARAN $tahunanggaran", 0, 1, 'C', 0, '', 0);
+            PDF::SetFont('times', '', 10);
+
+            PDF::ln(5);
+            PDF::Cell(28, 0, "UAPKB", 0, 0, 'L', 0, '', true);
+            PDF::Cell(5, 0, ": ", 0, 0, 'C', 0, '', true);
+            PDF::Cell(42, 0, "$datalokasi->nm_lks", 0, 1, 'L', 0, '', true);
+            PDF::ln(0);
+            PDF::Cell(28, 0, "Kode UAPKPB", 0, 0, 'L', 0, '', true);
+            PDF::Cell(5, 0, ": ", 0, 0, 'C', 0, '', true);
+            PDF::Cell(42, 0, "$lokasi", 0, 1, 'L', 0, '', true);
+
+            PDF::SetFont('times', 'b', 10);
+            PDF::ln(5);
+            PDF::Cell(20, 0, "KODE", 1, 0, 'C', 0, '', true);
+            PDF::Cell(100, 0, "NAMA BARANG", 1, 0, 'C', 0, '', true);
+            PDF::Cell(15, 0, "SATUAN", 1, 0, 'C', 0, '', true);
+            PDF::Cell(25, 0, "JUMLAH", 1, 0, 'C', 0, '', true);
+            PDF::Cell(30, 0, "HARGA", 1, 1, 'C', 0, '', true);
+            PDF::ln(0);
+            PDF::SetFont('times', '', 10);
+            PDF::ln(140);
+        };
+
+        // Set the header for each page
+        PDF::SetHeaderCallback($header);
+        PDF::AddPage();
+
+        // Define the footer function
+        $footer = function () {
+            PDF::SetFont('times', 'I', 8);
+            // Add page number to the right side of the footer
+            PDF::SetY(-15); // Set vertical position
+            PDF::Cell(0, 10, 'Halaman ' . PDF::PageNo(), 0, 0, 'R');
+        };
+
+        // Set the footer for each page
+        PDF::SetFooterCallback($footer);
+        //if($lokasi == "023170800677513009KD")
+        //{            
+            $total_nilai = 0;
+            $datalap = VLapPosisi4Model::
+            join('kategori','v_lap_posisi4.v_kd_kt','=','kategori.kd_kt')
+            ->where('v_lap_posisi4.v_kd_lks','=',$lokasi)
+            ->where('v_lap_posisi4.user_id','=',$user_id)
+            ->where('v_lap_posisi4.v_jns_tbm','=',2)
+            ->get();
+            foreach($datalap as $barislap)
+            {
+                PDF::SetFont('times', '', 10);
+                $total_nilai = $total_nilai + $barislap->total_nilai;
+                $datalapsubsub = VLapPosisi3Model::
+                join('kategori','v_lap_posisi3.v_kd_kt','=','kategori.kd_kt')
+                ->where('v_lap_posisi3.v_kd_kt','=',$barislap->v_kd_kt)
+                ->where('v_lap_posisi3.user_id','=',$user_id)
+                ->where('v_lap_posisi3.v_jns_tbm','=',2)
+                ->get();
+                foreach($datalapsubsub as $barislapsubsub)
+                {
+                    PDF::SetTextColor(128, 0, 0);
+                    $nilaisubsubrp = rupiah($barislapsubsub->total_nilai);
+                    PDF::Cell(20, 0, "$barislapsubsub->kd_kt", 1, 0, 'R', 0, '', true);
+                    PDF::Cell(140, 0, "$barislapsubsub->nm_kt", 1, 0, 'L', 0, '', true);
+                    PDF::Cell(30, 0, "$nilaisubsubrp", 1, 1, 'R', 0, '', true);
+                    PDF::ln(0);
+
+                    $datalapbrg = VLapPosisi2Model::
+                    join('barang','v_lap_posisi2.v_kd_brg','=','barang.kd_brg')
+                    ->join('jenis_satuan','barang.id_js','=','jenis_satuan.id_js')
+                    ->where('v_lap_posisi2.v_kd_kt','=',$barislapsubsub->v_kd_kt)
+                    ->where('v_lap_posisi2.user_id','=',$user_id)
+                    ->where('v_lap_posisi2.v_jns_tbm','=',2)
+                    ->get();
+                    foreach($datalapbrg as $barisbrg)
+                    {
+                        $sisa_barang = floor($barisbrg->sisa_barang);
+
+                        PDF::SetTextColor(0, 0, 0);
+                        $nilaibrg = rupiah($barisbrg->total_nilai);
+                        PDF::Cell(20, 0, "", 1, 0, 'R', 0, '', true);
+                        PDF::Cell(100, 0, "$barisbrg->no_brg - $barisbrg->nm_brg", 1, 0, 'L', 0, '', true);
+                        PDF::Cell(15, 0, "$barisbrg->nm_js", 1, 0, 'C', 0, '', true);
+                        PDF::Cell(25, 0, "$sisa_barang", 1, 0, 'C', 0, '', true);
+                        PDF::Cell(30, 0, "$nilaibrg", 1, 1, 'R', 0, '', true);
+                        PDF::ln(0);
+                    }
+                }
+            }
+            $total_nilai2 = rupiah($total_nilai);
+            PDF::SetFont('times', 'b', 10);
+            PDF::Cell(20, 0, "", 1, 0, 'C', 0, '', true);
+            PDF::Cell(140, 0, "Jumlah", 1, 0, 'R', 0, '', true);
+            PDF::Cell(30, 0, "$total_nilai2", 1, 1, 'R', 0, '', true);
+        //}
+        //else if($lokasi == "023170800677513000KD")
+        //{
+
+        //}
+        //else
+        //{
+
+        //}
+        $tgl = ucwords(strtolower($tgl));
+        PDF::SetFont('times', '', 10);
+        PDF::ln(10);
+        PDF::Cell(60, 0, "Disetujui tanggal: $tgl", 0, 0, 'C', 0, '', true);
+        PDF::Cell(60, 0, "", 0, 0, 'R', 0, '', true);
+        PDF::Cell(60, 0, "", 0, 1, 'C', 0, '', true);
+        PDF::ln(0);
+        PDF::Cell(60, 0, "$pejabatanpimpinan->nm_jabfk", 0, 0, 'C', 0, '', true);
+        PDF::Cell(60, 0, "", 0, 0, 'R', 0, '', true);
+        PDF::Cell(60, 0, "$pejabatanop->nm_jabfk", 0, 1, 'C', 0, '', true);
+        PDF::ln(20);
+        PDF::Cell(60, 0, "$pejabatanpimpinan->nm_jabpenfk", 0, 0, 'C', 0, '', true);
+        PDF::Cell(60, 0, "", 0, 0, 'R', 0, '', true);
+        PDF::Cell(60, 0, "$pejabatanop->nm_jabpenfk", 0, 1, 'C', 0, '', true);
+        PDF::ln(0);
+        PDF::Cell(60, 0, "NIP $pejabatanpimpinan->nik_jabpenfk", 0, 0, 'C', 0, '', true);
+        PDF::Cell(60, 0, "", 0, 0, 'R', 0, '', true);
+        PDF::Cell(60, 0, "NIP $pejabatanop->nik_jabpenfk", 0, 1, 'C', 0, '', true);
+
+        PDF::Output('laporan_posisi_persedian_di_neraca.pdf');
+    }
+}

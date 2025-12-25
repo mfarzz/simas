@@ -1,0 +1,38 @@
+.centered-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+}
+.right-cell {
+    display: flex;
+    justify-content: right;
+    align-items: right;
+    height: 100%;
+}
+
+div.dataTables_processing {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    pointer-events: none;
+}
+div.dataTables_processing::before {
+    content: '';
+    display: block;
+    width: 80px;
+    height: 80px;
+    background-image: url('loadingdata.gif');
+    background-size: cover;
+}
+#toast-container {
+    position: fixed;
+    z-index: 9999;
+    top: 50%;
+    left: 60%;
+    transform: translate(-50%, -50%);
+}
