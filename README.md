@@ -1,195 +1,105 @@
-# 🚀 SIMAS – Docker Setup & Database Import Guide
+# SIMAS - Sistem Informasi Manajemen (Dockerized)
 
-Dokumentasi ini menjelaskan cara **menjalankan SIMAS menggunakan Docker** serta **mengimpor database PostgreSQL dari file dump SQL**.
+Panduan ini menjelaskan cara instalasi dan menjalankan aplikasi SIMAS menggunakan Docker, mulai dari clone repository hingga import database.
+
+## Prasyarat
+Pastikan di komputer Anda sudah terinstall:
+- [Git](https://git-scm.com/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) (Pastikan Docker Engine berjalan)
 
 ---
 
-## 📦 Prasyarat
+## Langkah Instalasi
 
-Pastikan sudah terpasang:
-
-* **Docker**
-* **Docker Compose**
-* (Opsional) **Git**
-* (Opsional) **DataGrip / pgAdmin** untuk akses database
-
-Cek instalasi:
+### 1. Clone Repository
+Clone project ini ke komputer lokal Anda.
 
 ```bash
-docker --version
-docker compose version
+git clone <URL_REPOSITORY_ANDA>
+cd SIMAS
 ```
 
----
+### 2. Persiapkan Environment Variable
+Aplikasi ini dikonfigurasi untuk menggunakan file `.env2` sebagai sumber konfigurasi environment di dalam Docker.
 
-## 📁 Struktur Project (Contoh)
+1. Pastikan file `.env2` ada di root project.
+2. Cek konfigurasi database di dalam `.env2` agar sesuai dengan service Docker:
 
-```text
-simas_baru/
-│
-├── docker-compose.yml
-├── simas.sql
-├── README.md
-│
-├── backend/        # Laravel / Backend
-│   └── .env
-│
-└── frontend/       # Frontend (jika ada)
-```
+   ```ini
+   DB_CONNECTION=pgsql
+   DB_HOST=db
+   DB_PORT=5432
+   DB_DATABASE=simas
+   DB_USERNAME=simas
+   DB_PASSWORD="Simas2023##"
+   ```
+   > **Catatan:** `DB_HOST=db` merujuk pada nama service database di `compose.yaml`.
 
----
-
-## 🐳 Menjalankan Docker
-
-### 1️⃣ Jalankan Container
-
-Dari root project:
+### 3. Build dan Jalankan Docker
+Jalankan perintah berikut untuk membangun image dan menjalankan container:
 
 ```bash
-docker compose up -d
+docker compose up --build -d
 ```
+- `--build`: Membangun ulang image jika ada perubahan di Dockerfile.
+- `-d`: Menjalankan container di background (detached mode).
 
-Cek status container:
+Tunggu hingga proses selesai. Anda bisa mengecek status container dengan:
+```bash
+docker compose ps
+```
+Pastikan status container `be-simas` dan `db-simas` adalah **Running**.
+
+### 4. Install Dependency PHP (Jika belum terbawa di image)
+Secara default `Dockerfile` sudah melakukan copy source code. Jika folder `vendor` belum ada atau perlu update, jalankan:
 
 ```bash
-docker ps
+docker compose exec app composer install
 ```
 
-Pastikan container **PostgreSQL berjalan** (misalnya `db-simas`).
-
 ---
 
-## 🗄️ Konfigurasi Database PostgreSQL
+## Import Database (PostgreSQL)
 
-### Kredensial Default
+Setelah container berjalan, Anda perlu mengimport data dari file `simas.sql` ke dalam database PostgreSQL di Docker.
 
-| Konfigurasi | Nilai                       |
-| ----------- | --------------------------- |
-| Database    | `simas`                     |
-| Username    | `simas`                     |
-| Password    | `simas`                     |
-| Port        | `5432` (internal container) |
+### Cara Import via Terminal
 
----
-
-## 📥 Import Database (`simas.sql`)
-
-### 🔹 Opsi Aman (Recommended)
-
-**Drop & recreate database lalu import ulang**
-
-#### 1️⃣ Masuk ke PostgreSQL container
+Jalankan perintah berikut di terminal (pastikan Anda berada di folder root project dimana file `simas.sql` berada):
 
 ```bash
-docker exec -it db-simas psql -U simas
+docker exec -i db-simas psql -U simas -d simas < simas.sql
 ```
 
-#### 2️⃣ Drop & buat ulang database
+**Penjelasan Perintah:**
+- `docker exec -i db-simas`: Menjalankan perintah di dalam container bernama `db-simas`.
+- `psql -U simas -d simas`: Masuk ke PostgreSQL user `simas` dan database `simas`.
+- `< simas.sql`: Menginput isi file `simas.sql` ke dalam perintah tersebut.
 
-```sql
-DROP DATABASE simas;
-CREATE DATABASE simas;
-\q
-```
-
-#### 3️⃣ Copy file SQL ke container
-
-```bash
-docker cp simas.sql db-simas:/simas.sql
-```
-
-#### 4️⃣ Import database
-
-```bash
-docker exec -it db-simas psql -U simas -d simas -f /simas.sql
-```
-
-⏳ Tunggu hingga proses selesai (dump besar bisa memakan waktu).
+Jika diminta password, masukkan password sesuai di `.env2` / `compose.yaml` (Default: `Simas2023##`), namun biasanya perintah di atas langsung jalan jika konfigurasi trust/md5 sesuai.
 
 ---
 
-## ✅ Verifikasi Import
+## Akses Aplikasi
 
-Masuk ke database:
+Jika semua langkah berhasil:
+- **Aplikasi Web**: Buka browser dan akses [http://localhost:5000](http://localhost:5000)
 
-```bash
-docker exec -it db-simas psql -U simas -d simas
-```
+## Troubleshooting Berguna
 
-Cek tabel & view:
-
-```sql
-\dt
-\dv
-```
-
-Jika objek database muncul → **IMPORT BERHASIL** ✅
-
----
-
-## ⚙️ Konfigurasi Laravel (`.env`)
-
-Sesuaikan file `.env` backend:
-
-```env
-DB_CONNECTION=pgsql
-DB_HOST=db-simas
-DB_PORT=5432
-DB_DATABASE=simas
-DB_USERNAME=simas
-DB_PASSWORD=simas
-```
-
-Jalankan test koneksi:
-
-```bash
-docker exec -it be-simas php artisan migrate:status
-```
-
----
-
-## 🧰 Akses Database via GUI (Opsional)
-
-Gunakan DataGrip / pgAdmin dengan konfigurasi:
-
-| Field    | Value                           |
-| -------- | ------------------------------- |
-| Host     | `127.0.0.1`                     |
-| Port     | `5433` *(sesuai expose docker)* |
-| User     | `simas`                         |
-| Password | `simas`                         |
-| Database | `simas`                         |
-
----
-
-## 🧹 Troubleshooting
-
-### ❌ Password authentication failed
-
-* Pastikan `pg_hba.conf` tidak bermasalah
-* Restart PostgreSQL container:
-
-```bash
-docker restart db-simas
-```
-
-### ❌ Error table/view already exists
-
-* Gunakan **drop database** atau **drop schema public cascade**
-* Jangan import dump ke database yang sudah berisi data lama
-
----
-
-## 📌 Catatan Penting
-
-* Import SQL **hanya dilakukan sekali** setelah database bersih
-* Untuk environment **production**, gunakan user & password berbeda
-* Jangan commit file `.env` ke repository publik
-
----
-
-## 👨‍💻 Maintainer
-
-**SIMAS – Neo Telemetri**
-Dokumentasi dibuat untuk kebutuhan development & deployment internal.
-
+- **Masuk ke container App (Shell Apache/PHP)**:
+  ```bash
+  docker compose exec app bash
+  ```
+- **Masuk ke shell Database**:
+  ```bash
+  docker compose exec db bash
+  ```
+- **Lihat Logs**:
+  ```bash
+  docker compose logs -f
+  ```
+- **Restart Container**:
+  ```bash
+  docker compose restart
+  ```
