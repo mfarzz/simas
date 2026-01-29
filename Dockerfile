@@ -1,4 +1,4 @@
-FROM php:8.1-apache
+FROM php:8.4-apache
 
 # Enable Apache rewrite (WAJIB untuk Laravel)
 RUN a2enmod rewrite
@@ -31,4 +31,10 @@ RUN chown -R www-data:www-data \
     /var/www/html/storage \
     /var/www/html/bootstrap/cache
 
-USER www-data
+# Laravel optimization - cache config, routes, and views
+RUN php artisan config:clear && \
+    php artisan route:clear && \
+    php artisan view:clear && \
+    php artisan config:cache && \
+    php artisan route:cache && \
+    php artisan view:cache
