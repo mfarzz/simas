@@ -23,8 +23,17 @@ RUN sed -i 's|/var/www/html|/var/www/html/public|g' \
 # Set working directory
 WORKDIR /var/www/html
 
+# Copy composer files
+COPY composer.json composer.lock ./
+
+# Install Composer dependencies
+RUN composer install --no-scripts --no-autoloader
+
 # Copy source code
 COPY ./ /var/www/html
+
+# Generate Class map
+RUN composer dump-autoload --optimize
 
 # Permission (Laravel butuh write access)
 RUN chown -R www-data:www-data \
