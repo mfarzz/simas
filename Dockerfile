@@ -41,9 +41,7 @@ RUN chown -R www-data:www-data \
     /var/www/html/bootstrap/cache
 
 # Laravel optimization - cache config, routes, and views
+# Clear cache to ensure no stale configuration
 RUN php artisan config:clear && \
     php artisan route:clear && \
-    php artisan view:clear && \
-    php artisan config:cache && \
-    php artisan route:cache && \
-    php artisan view:cache
+    php artisan view:clear
