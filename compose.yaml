@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/var/www/html
       - /var/www/html/vendor
-      - ./.env:/var/www/html/.env
+      - ./.env2:/var/www/html/.env
       - ./storage:/var/www/html/storage
       - ./bootstrap/cache:/var/www/html/bootstrap/cache
     depends_on:
