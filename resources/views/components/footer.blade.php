@@ -4,5 +4,5 @@
         
       </ul>
   </div>
-    SIMAS V.2.0.0 &copy; 2023 <a href="">Universitas Andalas</a>.
+    SIMASET V.2.0.0 &copy; 2023 <a href="">Universitas Andalas</a>.
 </footer>
