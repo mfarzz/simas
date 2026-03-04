@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 namespace App\Http\Controllers\Laporan\Rektorat;
 
@@ -41,17 +41,22 @@ class LapPosisiPersediaanPrint extends Controller
 {
     Public Function index($filter, $lokasi)
     {
-        set_time_limit(300);
+        set_time_limit(0);
+        ini_set('memory_limit', '512M');
+
         $tgl_akhir = Crypt::decryptString($filter);
         $lokasi = Crypt::decryptString($lokasi);
         $user_id = auth()->user()->id;
 
-        TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->delete();
+        // Hapus sekali di awal, tidak perlu berulang di setiap blok
+        TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm', '=', '1')->delete();
 
         $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
 
         if($lokasi == "690522009KD")
         {
+            $nocek = 1;
+            $bulkInsertBmr = [];
             $databarangmasukrektorat = BarangMasukRektoratModel::
             where('kd_lks', '=', $lokasi)
             ->where('tglperolehan_bmr', '<=', $tgl_akhir )
@@ -66,6 +71,7 @@ class LapPosisiPersediaanPrint extends Controller
                 ->where('status_opur', '=', 1 )
                 ->orderBy('tgl_opur','desc')
                 ->first();
+
                 if($databarangopsik)
                 {
                     $jumlahbk = BarangKeluarRektoratModel::
@@ -85,13 +91,14 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrd = BarangKeluarRektoratDetailModel::
                             join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
                             ->where('id_bmr', '=', $barisbmr->id_bmr)
-                            ->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)
-                            ->where('tglambil_bkr', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->where('tglambil_bkr', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrd');
+
                             $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
-                            $bulk_tbmr[] = [
+                            $bulkInsertBmr[] = [
                                 'kd_brg'  => $barisbmr->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $tjmlh_opsik,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmr,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -111,13 +118,14 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrd = BarangKeluarRektoratDetailModel::
                             join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
                             ->where('id_bmr', '=', $barisbmr->id_bmr)
-                            ->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)
-                            ->where('tglambil_bkr', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->where('tglambil_bkr', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrd');
+
                             $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
-                            $bulk_tbmr[] = [
+                            $bulkInsertBmr[] = [
                                 'kd_brg'  => $barisbmr->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $tjmlh_opsik,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmr,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -133,26 +141,31 @@ class LapPosisiPersediaanPrint extends Controller
                     ->where('id_bmr', '=', $barisbmr->id_bmr)
                     ->where('tglambil_bkr', '<=', $tgl_akhir )
                     ->sum('jmlh_bkrd');
-                    $sisa_tbmr = $barisbmr->jmlh_awal_bmr - $tjmlh_bkrd;
-                    $bulk_tbmr[] = [
+
+                    $jmlh_awal_bmr = $barisbmr->jmlh_awal_bmr;
+                    $sisa_tbmr = ($jmlh_awal_bmr - $tjmlh_bkrd);
+
+                    $bulkInsertBmr[] = [
                         'kd_brg'  => $barisbmr->kd_brg,
-                        'sisa_tbm'=> $sisa_tbmr,
+                        'sisa_tbm' => $sisa_tbmr,
                         'hrg_tbm' => $barisbmr->hrg_bmr,
                         'kd_lks'  => $lokasi,
                         'user_id' => $user_id,
                         'jns_tbm' => 1,
                     ];
                 }
+                $nocek++;
             }
-            if (!empty($bulk_tbmr)) {
-                foreach (array_chunk($bulk_tbmr, 500) as $chunk) {
+            if (!empty($bulkInsertBmr)) {
+                foreach (array_chunk($bulkInsertBmr, 500) as $chunk) {
                     TempBarangMasukModel::insert($chunk);
                 }
             }
         }
         elseif($lokasi == "690522020KD")
         {
-            $bulk_tbmrs = [];
+            $nocek = 1;
+            $bulkInsertBmrs = [];
             $databarangmasukrumahsakit = BarangMasukRumahSakitModel::
             where('kd_lks', '=', $lokasi)
             ->where('tglperolehan_bmrs', '<=', $tgl_akhir )
@@ -167,6 +180,7 @@ class LapPosisiPersediaanPrint extends Controller
                 ->where('status_opurs', '=', 1 )
                 ->orderBy('tgl_opurs','desc')
                 ->first();
+
                 if($databarangopsik)
                 {
                     $jumlahbk = BarangKeluarRumahSakitModel::
@@ -186,13 +200,14 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrsd = BarangKeluarRumahSakitDetailModel::
                             join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
                             ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
-                            ->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)
-                            ->where('tglambil_bkrs', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->where('tglambil_bkrs', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrsd');
+
                             $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
-                            $bulk_tbmrs[] = [
+                            $bulkInsertBmrs[] = [
                                 'kd_brg'  => $barisbmrs->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $tjmlh_opsik,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmrs,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -212,13 +227,14 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrsd = BarangKeluarRumahSakitDetailModel::
                             join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
                             ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
-                            ->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)
-                            ->where('tglambil_bkrs', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->where('tglambil_bkrs', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrsd');
+
                             $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
-                            $bulk_tbmrs[] = [
+                            $bulkInsertBmrs[] = [
                                 'kd_brg'  => $barisbmrs->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $tjmlh_opsik,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmrs,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -234,19 +250,23 @@ class LapPosisiPersediaanPrint extends Controller
                     ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
                     ->where('tglambil_bkrs', '<=', $tgl_akhir )
                     ->sum('jmlh_bkrsd');
-                    $sisa_tbmrs = $barisbmrs->jmlh_awal_bmrs - $tjmlh_bkrsd;
-                    $bulk_tbmrs[] = [
+
+                    $jmlh_awal_bmrs = $barisbmrs->jmlh_awal_bmrs;
+                    $sisa_tbmrs = ($jmlh_awal_bmrs - $tjmlh_bkrsd);
+
+                    $bulkInsertBmrs[] = [
                         'kd_brg'  => $barisbmrs->kd_brg,
-                        'sisa_tbm'=> $sisa_tbmrs,
+                        'sisa_tbm' => $sisa_tbmrs,
                         'hrg_tbm' => $barisbmrs->hrg_bmrs,
                         'kd_lks'  => $lokasi,
                         'user_id' => $user_id,
                         'jns_tbm' => 1,
                     ];
                 }
+                $nocek++;
             }
-            if (!empty($bulk_tbmrs)) {
-                foreach (array_chunk($bulk_tbmrs, 500) as $chunk) {
+            if (!empty($bulkInsertBmrs)) {
+                foreach (array_chunk($bulkInsertBmrs, 500) as $chunk) {
                     TempBarangMasukModel::insert($chunk);
                 }
             }
@@ -254,7 +274,8 @@ class LapPosisiPersediaanPrint extends Controller
         else if($lokasi == "690522000KD") //universitas
         {
             // --- Rektorat ---
-            $bulk_tbmr = [];
+            $nocek = 1;
+            $bulkInsertUni = [];
             $databarangmasukrektorat = BarangMasukRektoratModel::
             where('tglperolehan_bmr', '<=', $tgl_akhir )
             ->orderBy('tglperolehan_bmr','asc')
@@ -268,6 +289,7 @@ class LapPosisiPersediaanPrint extends Controller
                 ->where('status_opur', '=', 1 )
                 ->orderBy('tgl_opur','desc')
                 ->first();
+
                 if($databarangopsik)
                 {
                     $jumlahbk = BarangKeluarRektoratModel::
@@ -287,13 +309,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrd = BarangKeluarRektoratDetailModel::
                             join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
                             ->where('id_bmr', '=', $barisbmr->id_bmr)
-                            ->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)
-                            ->where('tglambil_bkr', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->where('tglambil_bkr', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
-                            $bulk_tbmr[] = [
+
+                            $bulkInsertUni[] = [
                                 'kd_brg'  => $barisbmr->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmr,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -313,13 +335,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrd = BarangKeluarRektoratDetailModel::
                             join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
                             ->where('id_bmr', '=', $barisbmr->id_bmr)
-                            ->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)
-                            ->where('tglambil_bkr', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->where('tglambil_bkr', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
-                            $bulk_tbmr[] = [
+
+                            $bulkInsertUni[] = [
                                 'kd_brg'  => $barisbmr->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmr,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -335,25 +357,21 @@ class LapPosisiPersediaanPrint extends Controller
                     ->where('id_bmr', '=', $barisbmr->id_bmr)
                     ->where('tglambil_bkr', '<=', $tgl_akhir )
                     ->sum('jmlh_bkrd');
-                    $sisa_tbmr = $barisbmr->jmlh_awal_bmr - $tjmlh_bkrd;
-                    $bulk_tbmr[] = [
+
+                    $bulkInsertUni[] = [
                         'kd_brg'  => $barisbmr->kd_brg,
-                        'sisa_tbm'=> $sisa_tbmr,
+                        'sisa_tbm' => $barisbmr->jmlh_awal_bmr - $tjmlh_bkrd,
                         'hrg_tbm' => $barisbmr->hrg_bmr,
                         'kd_lks'  => $lokasi,
                         'user_id' => $user_id,
                         'jns_tbm' => 1,
                     ];
                 }
-            }
-            if (!empty($bulk_tbmr)) {
-                foreach (array_chunk($bulk_tbmr, 500) as $chunk) {
-                    TempBarangMasukModel::insert($chunk);
-                }
+                $nocek++;
             }
 
             // --- Rumah Sakit ---
-            $bulk_tbmrs = [];
+            $nocek = 1;
             $databarangmasukrumahsakit = BarangMasukRumahSakitModel::
             where('tglperolehan_bmrs', '<=', $tgl_akhir )
             ->orderBy('tglperolehan_bmrs','asc')
@@ -367,6 +385,7 @@ class LapPosisiPersediaanPrint extends Controller
                 ->where('status_opurs', '=', 1 )
                 ->orderBy('tgl_opurs','desc')
                 ->first();
+
                 if($databarangopsik)
                 {
                     $jumlahbk = BarangKeluarRumahSakitModel::
@@ -386,13 +405,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrsd = BarangKeluarRumahSakitDetailModel::
                             join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
                             ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
-                            ->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)
-                            ->where('tglambil_bkrs', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->where('tglambil_bkrs', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrsd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
-                            $bulk_tbmrs[] = [
+
+                            $bulkInsertUni[] = [
                                 'kd_brg'  => $barisbmrs->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmrs,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -412,13 +431,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkrsd = BarangKeluarRumahSakitDetailModel::
                             join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
                             ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
-                            ->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)
-                            ->where('tglambil_bkrs', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->where('tglambil_bkrs', '!=', $tgl_akhir)
                             ->sum('jmlh_bkrsd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
-                            $bulk_tbmrs[] = [
+
+                            $bulkInsertUni[] = [
                                 'kd_brg'  => $barisbmrs->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmrs,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -434,25 +453,21 @@ class LapPosisiPersediaanPrint extends Controller
                     ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
                     ->where('tglambil_bkrs', '<=', $tgl_akhir )
                     ->sum('jmlh_bkrsd');
-                    $sisa_tbmrs = $barisbmrs->jmlh_awal_bmrs - $tjmlh_bkrsd;
-                    $bulk_tbmrs[] = [
+
+                    $bulkInsertUni[] = [
                         'kd_brg'  => $barisbmrs->kd_brg,
-                        'sisa_tbm'=> $sisa_tbmrs,
+                        'sisa_tbm' => $barisbmrs->jmlh_awal_bmrs - $tjmlh_bkrsd,
                         'hrg_tbm' => $barisbmrs->hrg_bmrs,
                         'kd_lks'  => $lokasi,
                         'user_id' => $user_id,
                         'jns_tbm' => 1,
                     ];
                 }
-            }
-            if (!empty($bulk_tbmrs)) {
-                foreach (array_chunk($bulk_tbmrs, 500) as $chunk) {
-                    TempBarangMasukModel::insert($chunk);
-                }
+                $nocek++;
             }
 
             // --- Fakultas ---
-            $bulk_tbmf = [];
+            $nocek = 1;
             $databarangmasukfakultas = BarangMasukFakultasModel::
             where('tglperolehan_bmf', '<=', $tgl_akhir )
             ->orderBy('tglperolehan_bmf','asc')
@@ -466,6 +481,7 @@ class LapPosisiPersediaanPrint extends Controller
                 ->where('status_opfk', '=', 1 )
                 ->orderBy('tgl_opfk','desc')
                 ->first();
+
                 if($databarangopsik)
                 {
                     $jumlahbk = BarangKeluarFakultasModel::
@@ -485,13 +501,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkfd = BarangKeluarFakultasDetailModel::
                             join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
                             ->where('id_bmf', '=', $barisbmf->id_bmf)
-                            ->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)
-                            ->where('tglambil_bkf', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->where('tglambil_bkf', '!=', $tgl_akhir)
                             ->sum('jmlh_bkfd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
-                            $bulk_tbmf[] = [
+
+                            $bulkInsertUni[] = [
                                 'kd_brg'  => $barisbmf->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmf,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -511,13 +527,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkfd = BarangKeluarFakultasDetailModel::
                             join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
                             ->where('id_bmf', '=', $barisbmf->id_bmf)
-                            ->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)
-                            ->where('tglambil_bkf', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->where('tglambil_bkf', '!=', $tgl_akhir)
                             ->sum('jmlh_bkfd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
-                            $bulk_tbmf[] = [
+
+                            $bulkInsertUni[] = [
                                 'kd_brg'  => $barisbmf->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmf,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -533,33 +549,36 @@ class LapPosisiPersediaanPrint extends Controller
                     ->where('id_bmf', '=', $barisbmf->id_bmf)
                     ->where('tglambil_bkf', '<=', $tgl_akhir )
                     ->sum('jmlh_bkfd');
-                    $sisa_tbmf = $barisbmf->jmlh_awal_bmf - $tjmlh_bkfd;
-                    $bulk_tbmf[] = [
+
+                    $bulkInsertUni[] = [
                         'kd_brg'  => $barisbmf->kd_brg,
-                        'sisa_tbm'=> $sisa_tbmf,
+                        'sisa_tbm' => $barisbmf->jmlh_awal_bmf - $tjmlh_bkfd,
                         'hrg_tbm' => $barisbmf->hrg_bmf,
                         'kd_lks'  => $lokasi,
                         'user_id' => $user_id,
                         'jns_tbm' => 1,
                     ];
                 }
+                $nocek++;
             }
-            if (!empty($bulk_tbmf)) {
-                foreach (array_chunk($bulk_tbmf, 500) as $chunk) {
+
+            if (!empty($bulkInsertUni)) {
+                foreach (array_chunk($bulkInsertUni, 500) as $chunk) {
                     TempBarangMasukModel::insert($chunk);
                 }
             }
         }
         else if($lokasi == "")
         {
-            // lokasi kosong: data sudah dihapus di awal, tidak ada yang diproses
+            // lokasi kosong, tidak ada proses (sudah dihapus di awal)
         }
         else
         {
             $datafakultas = FakultasModel::where('kd_lks', $lokasi)->first();
             $id_fk = $datafakultas->id_fk;
 
-            $bulk_tbmf = [];
+            $nocek = 1;
+            $bulkInsertFk = [];
             $databarangmasukfakultas = BarangMasukFakultasModel::
             where('kd_lks', '=', $lokasi)
             ->where('tglperolehan_bmf', '<=', $tgl_akhir )
@@ -575,6 +594,7 @@ class LapPosisiPersediaanPrint extends Controller
                 ->where('status_opfk', '=', 1 )
                 ->orderBy('tgl_opfk','desc')
                 ->first();
+
                 if($databarangopsik)
                 {
                     $jumlahbk = BarangKeluarFakultasModel::
@@ -595,13 +615,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkfd = BarangKeluarFakultasDetailModel::
                             join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
                             ->where('id_bmf', '=', $barisbmf->id_bmf)
-                            ->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)
-                            ->where('tglambil_bkf', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->where('tglambil_bkf', '!=', $tgl_akhir)
                             ->sum('jmlh_bkfd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
-                            $bulk_tbmf[] = [
+
+                            $bulkInsertFk[] = [
                                 'kd_brg'  => $barisbmf->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmf,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -621,13 +641,13 @@ class LapPosisiPersediaanPrint extends Controller
                             $tjmlh_bkfd = BarangKeluarFakultasDetailModel::
                             join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
                             ->where('id_bmf', '=', $barisbmf->id_bmf)
-                            ->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)
-                            ->where('tglambil_bkf', '<', $tgl_akhir)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->where('tglambil_bkf', '!=', $tgl_akhir)
                             ->sum('jmlh_bkfd');
-                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
-                            $bulk_tbmf[] = [
+
+                            $bulkInsertFk[] = [
                                 'kd_brg'  => $barisbmf->kd_brg,
-                                'sisa_tbm'=> $tjmlh_opsik,
+                                'sisa_tbm' => $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd,
                                 'hrg_tbm' => $barisopsikdetailitem->hrg_bmf,
                                 'kd_lks'  => $lokasi,
                                 'user_id' => $user_id,
@@ -643,19 +663,20 @@ class LapPosisiPersediaanPrint extends Controller
                     ->where('id_bmf', '=', $barisbmf->id_bmf)
                     ->where('tglambil_bkf', '<=', $tgl_akhir )
                     ->sum('jmlh_bkfd');
-                    $sisa_tbmf = $barisbmf->jmlh_awal_bmf - $tjmlh_bkfd;
-                    $bulk_tbmf[] = [
+
+                    $bulkInsertFk[] = [
                         'kd_brg'  => $barisbmf->kd_brg,
-                        'sisa_tbm'=> $sisa_tbmf,
+                        'sisa_tbm' => $barisbmf->jmlh_awal_bmf - $tjmlh_bkfd,
                         'hrg_tbm' => $barisbmf->hrg_bmf,
                         'kd_lks'  => $lokasi,
                         'user_id' => $user_id,
                         'jns_tbm' => 1,
                     ];
                 }
+                $nocek++;
             }
-            if (!empty($bulk_tbmf)) {
-                foreach (array_chunk($bulk_tbmf, 500) as $chunk) {
+            if (!empty($bulkInsertFk)) {
+                foreach (array_chunk($bulkInsertFk, 500) as $chunk) {
                     TempBarangMasukModel::insert($chunk);
                 }
             }
