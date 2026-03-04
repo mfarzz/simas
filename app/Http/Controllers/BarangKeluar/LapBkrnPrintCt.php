@@ -23,21 +23,17 @@ class LapBkrnPrintCt extends Controller
         ->where('users.id', $user_id)
         ->first();
 
-        $datarektorat = User::join('unit_rektorat_jabatan','users.id_urj','=','unit_rektorat_jabatan.id_urj')
-            ->join('unit_rektorat','unit_rektorat_jabatan.id_ur','=','unit_rektorat.id_ur')
-            ->where('users.id', $user_id)->first();  
-
         $lokasi = $barislok->kd_lks;
         $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
-       
+
 
         function rupiah($angka){
-	
+
             $hasil_rupiah = number_format($angka,0,',','.');
             return $hasil_rupiah;
-         
+
         }
-   
+
         $tahunanggaran = substr($tgl_akhir, 0, 4);
         PDF::SetTitle('Laporan Barang Keluar');
         PDF::SetMargins(10, 39, 10);
@@ -100,7 +96,7 @@ class LapBkrnPrintCt extends Controller
             ->join('barang_masuk_rektorat','barang_keluar_rektorat_detail.id_bmr','=','barang_masuk_rektorat.id_bmr')
             ->join('barang','barang_masuk_rektorat.kd_brg','=','barang.kd_brg')
             ->join('kategori','barang.kd_kt','=','kategori.kd_kt')
-            ->where('barang_keluar_rektorat.id_ur','=',$datarektorat->id_ur)
+            ->where('barang_keluar_rektorat.id_ur','=',$barislok->id_ur)
             ->where('tglambil_bkr', '<=', $tgl_akhir )
             ->where('tglambil_bkr', '>=', $tgl_awal )
             ->get();
@@ -117,7 +113,7 @@ class LapBkrnPrintCt extends Controller
                 PDF::Cell(25, 0, "$barislap->jmlh_bkrd", 1, 0, 'C', 0, '', true);
                 PDF::Cell(30, 0, "$hrg_bmr_rp", 1, 0, 'R', 0, '', true);
                 PDF::Cell(30, 0, "$total_rp", 1, 1, 'R', 0, '', true);
-                PDF::ln(0);         
+                PDF::ln(0);
                 $no++;
                 //$total_nilai = $total_nilai + $barislap->total_nilai;
             }
@@ -126,7 +122,7 @@ class LapBkrnPrintCt extends Controller
             PDF::Cell(28, 0, "", 1, 0, 'C', 0, '', true);
             PDF::Cell(120, 0, "Jumlah", 1, 0, 'R', 0, '', true);
             PDF::Cell(40, 0, "$total_nilai2", 1, 1, 'R', 0, '', true);*/
-        
+
         PDF::SetFont('times', '', 10);
         PDF::ln(10);
         PDF::Cell(60, 0, "Disetujui tanggal:", 0, 0, 'C', 0, '', true);
@@ -137,7 +133,7 @@ class LapBkrnPrintCt extends Controller
         PDF::Cell(60, 0, "", 0, 0, 'R', 0, '', true);
         PDF::Cell(60, 0, "Petugas Pengelola Persediaan,", 0, 1, 'C', 0, '', true);
 
-        
+
 
 
         PDF::Output('laporan_barang_masuk.pdf');

@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Datatables;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 class BmfsCt extends Controller
 {
@@ -19,7 +20,7 @@ class BmfsCt extends Controller
         $user_id = auth()->user()->id;
         $datafakultas = User::join('fakultas_jabatan','users.id_fkj','=','fakultas_jabatan.id_fkj')
             ->join('fakultas','fakultas_jabatan.id_fk','=','fakultas.id_fk')
-            ->where('users.id', $user_id)->first();  
+            ->where('users.id', $user_id)->first();
         $tahun_anggaran = session('tahun_anggaran');
 
         if(request()->ajax()) {
@@ -28,11 +29,11 @@ class BmfsCt extends Controller
             ->whereYear('barang_masuk_fakultas_sp2d.tgl_bmfs',$tahun_anggaran)
             ->get())
             ->addColumn('id_bmfs', function ($data) {
-                return $data->id_bmfs; 
+                return $data->id_bmfs;
             })
             ->addColumn('id_bmfs_en', function ($data) {
                 $id_bmfs_en = Crypt::encryptString($data->id_bmfs);
-                return $id_bmfs_en; 
+                return $id_bmfs_en;
             })
             ->rawColumns(['action'])
             ->addIndexColumn()
@@ -49,7 +50,7 @@ class BmfsCt extends Controller
     }
 
     public function store(Request $request)
-    {  
+    {
         date_default_timezone_set('Asia/Jakarta');
         $tgl = date("Y-m-d");
         $user_id = auth()->user()->id;
@@ -93,18 +94,18 @@ class BmfsCt extends Controller
             }
             else
             {
-                $jumlah=0;               
+                $jumlah=0;
                 if($cekData->no_bmfs != $request->no_sp2d)
                 {
                     $jumlah = BmfsModel::where('id_fk', $id_fk)->where('no_bmfs', $request->no_sp2d)->count();
                     if($jumlah>0)
                     {
-                        return response()->json(['status' => 2]); 
+                        return response()->json(['status' => 2]);
                     }
                 }
                 if($jumlah==0)
-                { 
-                    $data = BmfsModel::where('id_bmfs', $request->id_bmfs)->first();                   
+                {
+                    $data = BmfsModel::where('id_bmfs', $request->id_bmfs)->first();
                     $data->no_bmfs = $request->no_sp2d;
                     $data->tgl_bmfs = $request->tgl_sp2d;
                     $data->nilai_bmfs = $request->nilai_sp2d;
@@ -113,20 +114,20 @@ class BmfsCt extends Controller
                     $data->save();
                     return response()->json(['status' => 4]);
                 }
-            }            
+            }
         }
     }
 
     public function edit(Request $request)
-    {   
+    {
         $data = BmfsModel::where('id_bmfs',$request->id_bmfs)->first();
         return Response()->json($data);
     }
 
     public function destroy(Request $request)
     {
-        $data = BmfsModel::where('id_bmfs', $request->id_bmfs)->first();   
-        $data->delete();         
+        $data = BmfsModel::where('id_bmfs', $request->id_bmfs)->first();
+        $data->delete();
         return Response()->json(0);
     }
 
@@ -148,17 +149,10 @@ class BmfsCt extends Controller
         {
             $cek_data = BmfsModel::where('id_bmfs', $request->id_bmfs)->first();
 
-            $total_nilai_bmf=0;
-            $databarangmasukfakultas = BarangMasukFakultasModel::where('id_bmfs', $request->id_bmfs)
-            ->orderBy('kd_brg','asc')
-            ->get();
-            foreach($databarangmasukfakultas as $barisbmf)
-            {
-                $jmlh_awal_bmf = $barisbmf->jmlh_awal_bmf;
-                $hrg_bmf = $barisbmf->hrg_bmf;
-                $nilai_bmf = $jmlh_awal_bmf * $hrg_bmf;
-                $total_nilai_bmf = $total_nilai_bmf + $nilai_bmf;
-            }
+            // Hitung total nilai dengan 1 query agregat
+            $total_nilai_bmf = BarangMasukFakultasModel::where('id_bmfs', $request->id_bmfs)
+                ->selectRaw('COALESCE(SUM(jmlh_awal_bmf * hrg_bmf), 0) as total')
+                ->value('total');
 
             if($cek_data->nilai_bmfs != $total_nilai_bmf)
             {
@@ -166,20 +160,30 @@ class BmfsCt extends Controller
             }
             else
             {
+                // Ambil semua item sekali saja
                 $databarangmasukfakultas = BarangMasukFakultasModel::where('id_bmfs', $request->id_bmfs)
-                ->orderBy('kd_brg','asc')
-                ->get();
+                    ->orderBy('kd_brg', 'asc')
+                    ->get();
+
+                // Kumpulkan delta stok dan nilai per kd_brg
+                $updateMap = [];
                 foreach($databarangmasukfakultas as $barisbmf)
                 {
-                    $jmlh_awal_bmf = $barisbmf->jmlh_awal_bmf;
-                    $hrg_bmf = $barisbmf->hrg_bmf;
-                    $nilai_bmf = $jmlh_awal_bmf * $hrg_bmf;
-                    $total_nilai_bmf = $total_nilai_bmf + $nilai_bmf;
+                    $kd = $barisbmf->kd_brg;
+                    if(!isset($updateMap[$kd])) {
+                        $updateMap[$kd] = ['stok' => 0, 'nilai' => 0];
+                    }
+                    $updateMap[$kd]['stok']  += $barisbmf->jmlh_awal_bmf;
+                    $updateMap[$kd]['nilai'] += $barisbmf->jmlh_awal_bmf * $barisbmf->hrg_bmf;
+                }
 
-                    $databmupdateitemnilai = BarangModel::where('kd_brg', $barisbmf->kd_brg)->first();
-                    $databmupdateitemnilai->nilai_brg = $databmupdateitemnilai->nilai_brg + $nilai_bmf;
-                    $databmupdateitemnilai->stok_brg = $databmupdateitemnilai->stok_brg + $jmlh_awal_bmf;
-                    $databmupdateitemnilai->save();
+                // Satu UPDATE per kd_brg
+                foreach($updateMap as $kd_brg => $delta)
+                {
+                    DB::table('barang')->where('kd_brg', $kd_brg)->update([
+                        'stok_brg'  => DB::raw('stok_brg + ' . $delta['stok']),
+                        'nilai_brg' => DB::raw('nilai_brg + ' . $delta['nilai']),
+                    ]);
                 }
             }
             $cek_data->status_bmfs = 1;

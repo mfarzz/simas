@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Datatables;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 class BkfnCt extends Controller
 {
@@ -22,7 +23,7 @@ class BkfnCt extends Controller
         $user_id = auth()->user()->id;
         $datafakultas = User::join('fakultas_jabatan','users.id_fkj','=','fakultas_jabatan.id_fkj')
             ->join('fakultas','fakultas_jabatan.id_fk','=','fakultas.id_fk')
-            ->where('users.id', $user_id)->first();  
+            ->where('users.id', $user_id)->first();
         $tahun_anggaran = session('tahun_anggaran');
         if(request()->ajax()) {
             return datatables()->of(BkfnModel::join('barang_keluar_penerima_fakultas','barang_keluar_fakultas_nota.id_bkpf','=','barang_keluar_penerima_fakultas.id_bkpf')
@@ -30,17 +31,17 @@ class BkfnCt extends Controller
             ->whereYear('barang_keluar_fakultas_nota.tgl_bkfn',$tahun_anggaran)
             ->get())
             ->addColumn('id_bkfn', function ($data) {
-                return $data->id_bkfn; 
+                return $data->id_bkfn;
             })
             ->addColumn('id_bkfn_en', function ($data) {
                 $id_bkfn_en = Crypt::encryptString($data->id_bkfn);
-                return $id_bkfn_en; 
+                return $id_bkfn_en;
             })
             ->rawColumns(['action'])
             ->addIndexColumn()
             ->make(true);
         }
-        $daftar_penerima = BkpfModel::where('id_fk',$datafakultas->id_fk)->where('status_bkpf',1)->orderby('nm_bkpf')->get();  
+        $daftar_penerima = BkpfModel::where('id_fk',$datafakultas->id_fk)->where('status_bkpf',1)->orderby('nm_bkpf')->get();
         return view('BarangKeluar.Khusus.Fakultas.Nota.index',['daftar_penerima'=>$daftar_penerima]);
     }
 
@@ -50,18 +51,18 @@ class BkfnCt extends Controller
         $tgl_akhir = Crypt::encryptString($request->tgl_akhir);
         return response()->json(['tgl_awal' => $tgl_awal, 'tgl_akhir' => $tgl_akhir]);
     }
-    
+
     public function getPenerima(Request $request){
         $user_id = auth()->user()->id;
         $datafakultas = User::join('fakultas_jabatan','users.id_fkj','=','fakultas_jabatan.id_fkj')
             ->join('fakultas','fakultas_jabatan.id_fk','=','fakultas.id_fk')
-            ->where('users.id', $user_id)->first();  
+            ->where('users.id', $user_id)->first();
         $idUnitjabatan = BkpfModel::where('id_fk', $datafakultas->id_fk)->pluck('id_bkpf','nm_bkpf');
         return response()->json($idUnitjabatan);
     }
 
     public function store(Request $request)
-    {  
+    {
         date_default_timezone_set('Asia/Jakarta');
         $tgl = date("Y-m-d");
         $user_id = auth()->user()->id;
@@ -80,14 +81,14 @@ class BkfnCt extends Controller
                     return response()->json(['status' => 5]);
                 }
                 else
-                {                
+                {
                     $jumlah = BkfnModel::where('id_fk', $id_fk)->where('no_bkfn', $request->no_nota)->count();
                     if($jumlah>0)
                     {
                         return response()->json(['status' => 2]);
                     }
                     else
-                    {                    
+                    {
                         $data = new BkfnModel();
                         $data->id_fk = $id_fk;
                         $data->id_bkpf = $request->penerima;
@@ -109,18 +110,18 @@ class BkfnCt extends Controller
                 }
                 else
                 {
-                    $jumlah=0;               
+                    $jumlah=0;
                     if($cekData->no_bkfn != $request->no_nota)
                     {
                         $jumlah = BkfnModel::where('id_fk', $id_fk)->where('no_bkfn', $request->no_nota)->count();
                         if($jumlah>0)
                         {
-                            return response()->json(['status' => 2]); 
+                            return response()->json(['status' => 2]);
                         }
                     }
                     if($jumlah==0)
-                    { 
-                        $data = BkfnModel::where('id_bkfn', $request->id_bkfn)->first();                   
+                    {
+                        $data = BkfnModel::where('id_bkfn', $request->id_bkfn)->first();
                         $data->no_bkfn = $request->no_nota;
                         $data->tgl_bkfn = $request->tgl_nota;
                         $data->id_bkpf = $request->penerima;
@@ -128,7 +129,7 @@ class BkfnCt extends Controller
                         $data->save();
                         return response()->json(['status' => 4]);
                     }
-                }            
+                }
             }
         }
         else
@@ -138,15 +139,15 @@ class BkfnCt extends Controller
     }
 
     public function edit(Request $request)
-    {   
+    {
         $data = BkfnModel::where('id_bkfn',$request->id_bkfn)->first();
         return Response()->json($data);
     }
 
     public function destroy(Request $request)
     {
-        $data = BkfnModel::where('id_bkfn', $request->id_bkfn)->first();   
-        $data->delete();         
+        $data = BkfnModel::where('id_bkfn', $request->id_bkfn)->first();
+        $data->delete();
         return Response()->json(0);
     }
 
@@ -168,108 +169,112 @@ class BkfnCt extends Controller
         {
             $cek_data = BkfnModel::where('id_bkfn', $request->id_bkfn)->first();
             $databarangkeluarfakultas = BarangKeluarFakultasModel::where('id_bkfn', $cek_data->id_bkfn)
-            ->orderBy('kd_brg','asc')
-            ->get();
-            foreach($databarangkeluarfakultas as $barisbkf)
-            {
-                $stoktotal = BarangModel::where('kd_brg', $barisbkf->kd_brg)->sum('stok_brg');
-                $proses=0;
-                $tnilai_baru=0;
-                $jumlah_keluar = $barisbkf->jmlh_bkf;
-                $databarangmasukfakultas = BarangMasukFakultasModel::where('id_fk', $id_fk)->where('kd_brg', $barisbkf->kd_brg)
-                ->where('sisa_bmf',  '!=', 0)
-                ->orderBy('tglperolehan_bmf','asc')
+                ->orderBy('kd_brg', 'asc')
                 ->get();
-                foreach($databarangmasukfakultas as $barisbmf)
+
+            // Cache barang records to avoid re-querying the same row multiple times
+            $barangCache = [];
+
+            foreach ($databarangkeluarfakultas as $barisbkf)
+            {
+                $kd_brg = $barisbkf->kd_brg;
+
+                // Load and cache barang once per kd_brg
+                if (!isset($barangCache[$kd_brg])) {
+                    $barangCache[$kd_brg] = BarangModel::where('kd_brg', $kd_brg)->first();
+                }
+
+                $proses = 0;
+                $jumlah_keluar = $barisbkf->jmlh_bkf;
+
+                $databarangmasukfakultas = BarangMasukFakultasModel::where('id_fk', $id_fk)
+                    ->where('kd_brg', $kd_brg)
+                    ->where('sisa_bmf', '!=', 0)
+                    ->orderBy('tglperolehan_bmf', 'asc')
+                    ->get();
+
+                foreach ($databarangmasukfakultas as $barisbmf)
                 {
+                    if ($proses == 1) break;
+
                     $sisabmf = $barisbmf->sisa_bmf;
-                    if($jumlah_keluar <= $sisabmf)
+
+                    if ($jumlah_keluar <= $sisabmf)
                     {
-                        $sisa = $sisabmf - $jumlah_keluar;                            
-                        if($proses==0)
-                        {
-                            $nilai_baru = $barisbmf->hrg_bmf * $jumlah_keluar;
-                            $databmupdate = BarangMasukFakultasModel::where('id_bmf', $barisbmf->id_bmf)->first();                   
-                            $databmupdate->sisa_bmf = $sisa;
-                            $databmupdate->save();
-                            
-                            $databkfdetail = new BarangKeluarFakultasDetailModel();
-                            $databkfdetail->id_bkf = $barisbkf->id_bkf;
-                            $databkfdetail->id_bmf = $barisbmf->id_bmf;
-                            $databkfdetail->jmlh_bkfd = $jumlah_keluar;
-                            $databkfdetail->user_id = $user_id;
-                            $databkfdetail->save();
-                            $proses=1;
-                            $databarang = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();                                
-                            $nilai_terakhir = $databarang->nilai_brg;
-                            
-                            $databmupdateitemnilai = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();                                
-                            $tnilai_baru = $nilai_baru + $tnilai_baru;
-                            $databmupdateitemnilai->nilai_brg = $nilai_terakhir - $tnilai_baru;
-                            $databmupdateitemnilai->stok_brg = $databmupdateitemnilai->stok_brg - $jumlah_keluar;
-                            $databmupdateitemnilai->save();
-                        }
-                    }                        
+                        $sisa       = $sisabmf - $jumlah_keluar;
+                        $nilai_baru = $barisbmf->hrg_bmf * $jumlah_keluar;
+
+                        // Update sisa stok barang masuk directly (avoid re-fetch)
+                        BarangMasukFakultasModel::where('id_bmf', $barisbmf->id_bmf)
+                            ->update(['sisa_bmf' => $sisa]);
+
+                        $databkfdetail = new BarangKeluarFakultasDetailModel();
+                        $databkfdetail->id_bkf   = $barisbkf->id_bkf;
+                        $databkfdetail->id_bmf   = $barisbmf->id_bmf;
+                        $databkfdetail->jmlh_bkfd = $jumlah_keluar;
+                        $databkfdetail->user_id  = $user_id;
+                        $databkfdetail->save();
+
+                        // Update cached barang
+                        $barangCache[$kd_brg]->nilai_brg -= $nilai_baru;
+                        $barangCache[$kd_brg]->stok_brg  -= $jumlah_keluar;
+                        $proses = 1;
+                    }
                     else
                     {
-                        if($proses==0)
+                        $sisa = $jumlah_keluar - $sisabmf;
+                        if ($sisa >= 0)
                         {
-                            $sisa = $jumlah_keluar - $sisabmf;
-                            if($sisa >= 0)
-                            {          
-                                $nilai_baru = $barisbmf->hrg_bmf * $sisabmf;
-                                $databmupdate = BarangMasukFakultasModel::where('id_bmf', $barisbmf->id_bmf)->first();                   
-                                $databmupdate->sisa_bmf = 0;                            
-                                $databmupdate->save();
+                            $nilai_baru = $barisbmf->hrg_bmf * $sisabmf;
 
-                                $databkdetail = new BarangKeluarFakultasDetailModel();
-                                $databkdetail->id_bkf = $barisbkf->id_bkf;
-                                $databkdetail->id_bmf = $barisbmf->id_bmf;
-                                $databkdetail->jmlh_bkfd = $sisabmf;
-                                $databkdetail->user_id = $user_id;
-                                $databkdetail->save();
-                                $proses=0;
-                                $jumlah_keluar = $sisa;
+                            BarangMasukFakultasModel::where('id_bmf', $barisbmf->id_bmf)
+                                ->update(['sisa_bmf' => 0]);
 
-                                $databarang = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();                                
-                                $nilai_terakhir = $databarang->nilai_brg;
-                                
-                                $databmupdateitemnilai = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();
-                                $databmupdateitemnilai->nilai_brg = $nilai_terakhir - $nilai_baru;
-                                $databmupdateitemnilai->stok_brg = $databmupdateitemnilai->stok_brg - $jumlah_keluar;
-                                $databmupdateitemnilai->save();
-                            }
-                            else
-                            {
-                                $sisa = $sisabmf - $jumlah_keluar;
-                                $nilai_baru = $barisbmf->hrg_bmf * $jumlah_keluar;
-                                $databmupdate = BarangMasukFakultasModel::where('id_bmf', $barisbmf->id_bmf)->first();                   
-                                $databmupdate->sisa_bmf = $sisa;                            
-                                $databmupdate->save();
+                            $databkdetail = new BarangKeluarFakultasDetailModel();
+                            $databkdetail->id_bkf    = $barisbkf->id_bkf;
+                            $databkdetail->id_bmf    = $barisbmf->id_bmf;
+                            $databkdetail->jmlh_bkfd = $sisabmf;
+                            $databkdetail->user_id   = $user_id;
+                            $databkdetail->save();
 
-                                $databkdetail = new BarangKeluarFakultasDetailModel();
-                                $databkdetail->id_bkf = $barisbkf->id_bkf;
-                                $databkdetail->id_bmf = $barisbmf->id_bmf;
-                                $databkdetail->jmlh_bkfd = $sisabmf;
-                                $databkdetail->user_id = $user_id;
-                                $databkdetail->save();                                
-                                $proses=1;
+                            $jumlah_keluar = $sisa;
 
-                                $databarang = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();                                
-                                $nilai_terakhir = $databarang->nilai_brg;
+                            $barangCache[$kd_brg]->nilai_brg -= $nilai_baru;
+                            $barangCache[$kd_brg]->stok_brg  -= $sisabmf;
+                            // proses stays 0, continue to next batch row
+                        }
+                        else
+                        {
+                            $sisa       = $sisabmf - $jumlah_keluar;
+                            $nilai_baru = $barisbmf->hrg_bmf * $jumlah_keluar;
 
-                                $databmupdateitemnilai = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();
-                                $databmupdateitemnilai->nilai_brg = $nilai_terakhir - $nilai_baru;
-                                $databmupdateitemnilai->stok_brg = $databmupdateitemnilai->stok_brg - $jumlah_keluar;
-                                $databmupdateitemnilai->save();
-                            }
+                            BarangMasukFakultasModel::where('id_bmf', $barisbmf->id_bmf)
+                                ->update(['sisa_bmf' => $sisa]);
+
+                            $databkdetail = new BarangKeluarFakultasDetailModel();
+                            $databkdetail->id_bkf    = $barisbkf->id_bkf;
+                            $databkdetail->id_bmf    = $barisbmf->id_bmf;
+                            $databkdetail->jmlh_bkfd = $sisabmf;
+                            $databkdetail->user_id   = $user_id;
+                            $databkdetail->save();
+
+                            $barangCache[$kd_brg]->nilai_brg -= $nilai_baru;
+                            $barangCache[$kd_brg]->stok_brg  -= $jumlah_keluar;
+                            $proses = 1;
                         }
                     }
                 }
-                $databmupdateitem = BarangModel::where('kd_brg', $barisbkf->kd_brg)->first();                   
-                $databmupdateitem->stok_brg = $stoktotal - $barisbkf->jmlh_bkf;                    
-                $databmupdateitem->save();
+
+                // Final stok reconciliation: set stok to (original total - jmlh_bkf)
+                $stoktotal = BarangModel::where('kd_brg', $kd_brg)->value('stok_brg');
+                DB::table('barang')->where('kd_brg', $kd_brg)->update([
+                    'stok_brg'  => $stoktotal - $barisbkf->jmlh_bkf,
+                    'nilai_brg' => $barangCache[$kd_brg]->nilai_brg,
+                ]);
+                // Keep cache in sync
+                $barangCache[$kd_brg]->stok_brg = $stoktotal - $barisbkf->jmlh_bkf;
             }
+
             $cek_data->status_bkfn = 1;
             $cek_data->user_id = $user_id;
             $cek_data->save();

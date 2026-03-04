@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Datatables;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 class BmrsCt extends Controller
 {
@@ -19,7 +20,7 @@ class BmrsCt extends Controller
         $user_id = auth()->user()->id;
         $datarektorat = User::join('unit_rektorat_jabatan','users.id_urj','=','unit_rektorat_jabatan.id_urj')
             ->join('unit_rektorat','unit_rektorat_jabatan.id_ur','=','unit_rektorat.id_ur')
-            ->where('users.id', $user_id)->first();  
+            ->where('users.id', $user_id)->first();
         $tahun_anggaran = session('tahun_anggaran');
         if(request()->ajax()) {
             return datatables()->of(BmrsModel::
@@ -27,11 +28,11 @@ class BmrsCt extends Controller
             ->whereYear('barang_masuk_rektorat_sp2d.tgl_bmrs',$tahun_anggaran)
             ->get())
             ->addColumn('id_bmrs', function ($data) {
-                return $data->id_bmrs; 
+                return $data->id_bmrs;
             })
             ->addColumn('id_bmrs_en', function ($data) {
                 $id_bmrs_en = Crypt::encryptString($data->id_bmrs);
-                return $id_bmrs_en; 
+                return $id_bmrs_en;
             })
             ->rawColumns(['action'])
             ->addIndexColumn()
@@ -48,7 +49,7 @@ class BmrsCt extends Controller
     }
 
     public function store(Request $request)
-    {  
+    {
         date_default_timezone_set('Asia/Jakarta');
         $tgl = date("Y-m-d");
         $user_id = auth()->user()->id;
@@ -63,7 +64,7 @@ class BmrsCt extends Controller
                 return response()->json(['status' => 5]);
             }
             else
-            {                
+            {
                 $jumlah = BmrsModel::where('id_ur', $id_ur)->where('no_bmrs', $request->no_sp2d)->count();
                 if($jumlah>0)
                 {
@@ -92,18 +93,18 @@ class BmrsCt extends Controller
             }
             else
             {
-                $jumlah=0;               
+                $jumlah=0;
                 if($cekData->no_bmrs != $request->no_sp2d)
                 {
                     $jumlah = BmrsModel::where('id_ur', $id_ur)->where('no_bmrs', $request->no_sp2d)->count();
                     if($jumlah>0)
                     {
-                        return response()->json(['status' => 2]); 
+                        return response()->json(['status' => 2]);
                     }
                 }
                 if($jumlah==0)
-                { 
-                    $data = BmrsModel::where('id_bmrs', $request->id_bmrs)->first();                   
+                {
+                    $data = BmrsModel::where('id_bmrs', $request->id_bmrs)->first();
                     $data->no_bmrs = $request->no_sp2d;
                     $data->tgl_bmrs = $request->tgl_sp2d;
                     $data->nilai_bmrs = $request->nilai_sp2d;
@@ -112,20 +113,20 @@ class BmrsCt extends Controller
                     $data->save();
                     return response()->json(['status' => 4]);
                 }
-            }            
-        }        
+            }
+        }
     }
 
     public function edit(Request $request)
-    {   
+    {
         $data = BmrsModel::where('id_bmrs',$request->id_bmrs)->first();
         return Response()->json($data);
     }
 
     public function destroy(Request $request)
     {
-        $data = BmrsModel::where('id_bmrs', $request->id_bmrs)->first();   
-        $data->delete();         
+        $data = BmrsModel::where('id_bmrs', $request->id_bmrs)->first();
+        $data->delete();
         return Response()->json(0);
     }
 
@@ -149,38 +150,39 @@ class BmrsCt extends Controller
 
             $total_nilai_bmr=0;
             $databarangmasukrektorat = BarangMasukRektoratModel::where('id_bmrs', $request->id_bmrs)
-            ->orderBy('kd_brg','asc')
-            ->get();
-            foreach($databarangmasukrektorat as $barisbmr)
-            {
-                $jmlh_awal_bmr = $barisbmr->jmlh_awal_bmr;
-                $hrg_bmr = $barisbmr->hrg_bmr;
-                $nilai_bmr = $jmlh_awal_bmr * $hrg_bmr;
-                $total_nilai_bmr = $total_nilai_bmr + $nilai_bmr;
+                ->orderBy('kd_brg', 'asc')
+                ->get();
+            foreach ($databarangmasukrektorat as $barisbmr) {
+                $nilai_bmr = $barisbmr->jmlh_awal_bmr * $barisbmr->hrg_bmr;
+                $total_nilai_bmr += $nilai_bmr;
             }
 
             //if($cek_data->nilai_bmrs != $total_nilai_bmr)
             //{
-              //  return response()->json(['status' => 3]);
+            //    return response()->json(['status' => 3]);
             //}
             //else
             //{
-                $databarangmasukrektorat = BarangMasukRektoratModel::where('id_bmrs', $request->id_bmrs)
-                ->orderBy('kd_brg','asc')
-                ->get();
-                foreach($databarangmasukrektorat as $barisbmr)
-                {
-                    $jmlh_awal_bmr = $barisbmr->jmlh_awal_bmr;
-                    $hrg_bmr = $barisbmr->hrg_bmr;
-                    $nilai_bmr = $jmlh_awal_bmr * $hrg_bmr;
-                    $total_nilai_bmr = $total_nilai_bmr + $nilai_bmr;
 
-                    $databmupdateitemnilai = BarangModel::where('kd_brg', $barisbmr->kd_brg)->first();
-                    $databmupdateitemnilai->nilai_brg = $databmupdateitemnilai->nilai_brg + $nilai_bmr;
-                    $databmupdateitemnilai->stok_brg = $databmupdateitemnilai->stok_brg + $jmlh_awal_bmr;
-                    $databmupdateitemnilai->save();
+            // Build update map: accumulate stok and nilai deltas per kd_brg
+            $updateMap = [];
+            foreach ($databarangmasukrektorat as $barisbmr) {
+                $kd = $barisbmr->kd_brg;
+                $nilai_bmr = $barisbmr->jmlh_awal_bmr * $barisbmr->hrg_bmr;
+                if (!isset($updateMap[$kd])) {
+                    $updateMap[$kd] = ['stok' => 0, 'nilai' => 0];
                 }
+                $updateMap[$kd]['stok']  += $barisbmr->jmlh_awal_bmr;
+                $updateMap[$kd]['nilai'] += $nilai_bmr;
+            }
+            foreach ($updateMap as $kd_brg => $delta) {
+                DB::table('barang')->where('kd_brg', $kd_brg)->update([
+                    'stok_brg'  => DB::raw('stok_brg + ' . $delta['stok']),
+                    'nilai_brg' => DB::raw('nilai_brg + ' . $delta['nilai']),
+                ]);
+            }
             //}
+
             $cek_data->status_bmrs = 1;
             $cek_data->user_id = $user_id;
             $cek_data->save();

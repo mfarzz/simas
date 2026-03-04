@@ -25,24 +25,20 @@ class LapBkfnPrintCt extends Controller
         ->where('users.id', $user_id)
         ->first();
 
-        $datafakultas = User::join('fakultas_jabatan','users.id_fkj','=','fakultas_jabatan.id_fkj')
-            ->join('fakultas','fakultas_jabatan.id_fk','=','fakultas.id_fk')
-            ->where('users.id', $user_id)->first();  
-
         $lokasi = $barislok->kd_lks;
         $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
 
-        $pejabatanpimpinan = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $datafakultas->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 1)->first();
-        $pejabatanop = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $datafakultas->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 2)->first();
-       
+        $pejabatanpimpinan = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $barislok->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 1)->first();
+        $pejabatanop = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $barislok->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 2)->first();
+
 
         function rupiah($angka){
-	
+
             $hasil_rupiah = number_format($angka,0,',','.');
             return $hasil_rupiah;
-         
+
         }
-   
+
         $tahunanggaran = substr($tgl_akhir, 0, 4);
         PDF::SetTitle('Laporan Barang Keluar');
         PDF::SetMargins(10, 39, 10);
@@ -105,7 +101,7 @@ class LapBkfnPrintCt extends Controller
             ->join('barang_masuk_fakultas','barang_keluar_fakultas_detail.id_bmf','=','barang_masuk_fakultas.id_bmf')
             ->join('barang','barang_masuk_fakultas.kd_brg','=','barang.kd_brg')
             ->join('kategori','barang.kd_kt','=','kategori.kd_kt')
-            ->where('barang_keluar_fakultas.id_fk','=',$datafakultas->id_fk)
+            ->where('barang_keluar_fakultas.id_fk','=',$barislok->id_fk)
             ->where('tglambil_bkf', '<=', $tgl_akhir )
             ->where('tglambil_bkf', '>=', $tgl_awal )
             ->get();
@@ -122,7 +118,7 @@ class LapBkfnPrintCt extends Controller
                 PDF::Cell(25, 0, "$barislap->jmlh_bkfd", 1, 0, 'C', 0, '', true);
                 PDF::Cell(30, 0, "$hrg_bmf_rp", 1, 0, 'R', 0, '', true);
                 PDF::Cell(30, 0, "$total_rp", 1, 1, 'R', 0, '', true);
-                PDF::ln(0);         
+                PDF::ln(0);
                 $no++;
                 //$total_nilai = $total_nilai + $barislap->total_nilai;
             }
@@ -131,7 +127,7 @@ class LapBkfnPrintCt extends Controller
             PDF::Cell(28, 0, "", 1, 0, 'C', 0, '', true);
             PDF::Cell(120, 0, "Jumlah", 1, 0, 'R', 0, '', true);
             PDF::Cell(40, 0, "$total_nilai2", 1, 1, 'R', 0, '', true);*/
-        
+
         PDF::SetFont('times', '', 10);
         PDF::ln(10);
         PDF::Cell(60, 0, "Disetujui tanggal:", 0, 0, 'C', 0, '', true);
@@ -150,7 +146,7 @@ class LapBkfnPrintCt extends Controller
         PDF::Cell(60, 0, "", 0, 0, 'R', 0, '', true);
         PDF::Cell(60, 0, "NIP $pejabatanop->nik_jabpenfk", 0, 1, 'C', 0, '', true);
 
-        
+
 
 
         PDF::Output('laporan_barang_masuk.pdf');
