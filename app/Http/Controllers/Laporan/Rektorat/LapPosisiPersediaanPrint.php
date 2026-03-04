@@ -39,129 +39,29 @@ use PDF;
 
 class LapPosisiPersediaanPrint extends Controller
 {
-    /**
-     * Hapus cache perhitungan sementara untuk user agar perhitungan selalu fresh.
-     */
-    private function clearUserTemp(int $userId): void
-    {
-        TempBarangMasukModel::where('user_id', $userId)->where('jns_tbm', 1)->delete();
-    }
-
-    private function latestOpsikRektorat(string $kdBrg, string $tglAkhir)
-    {
-        return OpsikUrDetModel::join('opsik_rektorat', 'opsik_rektorat_detail.id_opur', '=', 'opsik_rektorat.id_opur')
-            ->where('kd_brg', $kdBrg)
-            ->where('tgl_opur', '<=', $tglAkhir)
-            ->where('status_opur', 1)
-            ->orderBy('tgl_opur', 'desc')
-            ->select('opsik_rektorat_detail.*', 'opsik_rektorat.tgl_opur')
-            ->first();
-    }
-
-    private function latestOpsikRumahSakit(string $kdBrg, string $tglAkhir)
-    {
-        return OpsikUrsDetModel::join('opsik_rumah_sakit', 'opsik_rumah_sakit_detail.id_opurs', '=', 'opsik_rumah_sakit.id_opurs')
-            ->where('kd_brg', $kdBrg)
-            ->where('tgl_opurs', '<=', $tglAkhir)
-            ->where('status_opurs', 1)
-            ->orderBy('tgl_opurs', 'desc')
-            ->select('opsik_rumah_sakit_detail.*', 'opsik_rumah_sakit.tgl_opurs')
-            ->first();
-    }
-
-    private function latestOpsikFakultas(string $kdBrg, string $tglAkhir, ?int $idFk = null)
-    {
-        $query = OpsikFkDetModel::join('opsik_fakultas', 'opsik_fakultas_detail.id_opfk', '=', 'opsik_fakultas.id_opfk')
-            ->where('kd_brg', $kdBrg)
-            ->where('tgl_opfk', '<=', $tglAkhir)
-            ->where('status_opfk', 1);
-
-        if ($idFk !== null) {
-            $query->where('id_fk', $idFk);
-        }
-
-        return $query->orderBy('tgl_opfk', 'desc')
-            ->select('opsik_fakultas_detail.*', 'opsik_fakultas.tgl_opfk', 'opsik_fakultas.id_fk')
-            ->first();
-    }
-
-    private function hasBarangKeluarRektoratAfter(string $kdBrg, string $tglOpur): bool
-    {
-        return BarangKeluarRektoratModel::where('kd_brg', $kdBrg)
-            ->where('tglambil_bkr', '>', $tglOpur)
-            ->exists();
-    }
-
-    private function hasBarangKeluarRumahSakitAfter(string $kdBrg, string $tglOpur): bool
-    {
-        return BarangKeluarRumahSakitModel::where('kd_brg', $kdBrg)
-            ->where('tglambil_bkrs', '>', $tglOpur)
-            ->exists();
-    }
-
-    private function hasBarangKeluarFakultasAfter(string $kdBrg, string $tglOpur, ?int $idFk = null): bool
-    {
-        $query = BarangKeluarFakultasModel::where('kd_brg', $kdBrg)
-            ->where('tglambil_bkf', '>', $tglOpur);
-
-        if ($idFk !== null) {
-            $query->where('id_fk', $idFk);
-        }
-
-        return $query->exists();
-    }
-
-    private function sumBarangKeluarRektorat(int $idBmr, string $startDate, string $endDate, bool $excludeEndDate = false): int
-    {
-        $query = BarangKeluarRektoratDetailModel::join('barang_keluar_rektorat', 'barang_keluar_rektorat_detail.id_bkr', '=', 'barang_keluar_rektorat.id_bkr')
-            ->where('id_bmr', $idBmr)
-            ->whereBetween('tglambil_bkr', [$startDate, $endDate]);
-
-        if ($excludeEndDate) {
-            $query->where('tglambil_bkr', '<>', $endDate);
-        }
-
-        return (int) $query->sum('jmlh_bkrd');
-    }
-
-    private function sumBarangKeluarRumahSakit(int $idBmrs, string $startDate, string $endDate, bool $excludeEndDate = false): int
-    {
-        $query = BarangKeluarRumahSakitDetailModel::join('barang_keluar_rumah_sakit', 'barang_keluar_rumah_sakit_detail.id_bkrs', '=', 'barang_keluar_rumah_sakit.id_bkrs')
-            ->where('id_bmrs', $idBmrs)
-            ->whereBetween('tglambil_bkrs', [$startDate, $endDate]);
-
-        if ($excludeEndDate) {
-            $query->where('tglambil_bkrs', '<>', $endDate);
-        }
-
-        return (int) $query->sum('jmlh_bkrsd');
-    }
-
-    private function sumBarangKeluarFakultas(int $idBmf, string $startDate, string $endDate, bool $excludeEndDate = false): int
-    {
-        $query = BarangKeluarFakultasDetailModel::join('barang_keluar_fakultas', 'barang_keluar_fakultas_detail.id_bkf', '=', 'barang_keluar_fakultas.id_bkf')
-            ->where('id_bmf', $idBmf)
-            ->whereBetween('tglambil_bkf', [$startDate, $endDate]);
-
-        if ($excludeEndDate) {
-            $query->where('tglambil_bkf', '<>', $endDate);
-        }
-
-        return (int) $query->sum('jmlh_bkfd');
-    }
     Public Function index($filter, $lokasi)
     {
         $tgl_akhir = Crypt::decryptString($filter);
         $lokasi = Crypt::decryptString($lokasi);
         $user_id = auth()->user()->id;
 
-        // Bersihkan data temp sekali di awal agar perhitungan tidak menumpuk.
-        $this->clearUserTemp($user_id);
+        $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->count();
+        if($jumlah != 0)
+        {
+            $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1');
+            $datadeletetbm->delete();
+        }
 
         $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
 
         if($lokasi == "690522009KD")
         {
+            $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->count();
+            if($jumlah != 0)
+            {
+            $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1');
+            $datadeletetbm->delete();
+            }
             $nocek = 1;
             $databarangmasukrektorat = BarangMasukRektoratModel::
             where('kd_lks', '=', $lokasi)
@@ -169,50 +69,130 @@ class LapPosisiPersediaanPrint extends Controller
             //->where('kd_brg', '=', '118101000013')
             ->orderBy('tglperolehan_bmr','asc')
             ->get();
-            $opsikCache = [];
-            $keluarAfterCache = [];
             foreach($databarangmasukrektorat as $barisbmr)
             {
-                $opsik = $opsikCache[$barisbmr->kd_brg] ??= $this->latestOpsikRektorat($barisbmr->kd_brg, $tgl_akhir);
-
-                if($opsik)
+                $jumlahopsik = OpsikUrDetModel::
+                join('opsik_rektorat','opsik_rektorat_detail.id_opur','=','opsik_rektorat.id_opur')
+                ->where('kd_brg', '=', $barisbmr->kd_brg)
+                ->where('tgl_opur', '<=', $tgl_akhir )
+                ->where('status_opur', '=', 1 )
+                ->count();
+                if($jumlahopsik>=1)
                 {
-                    $keluarKey = $barisbmr->kd_brg.'|'.$opsik->tgl_opur;
-                    $keluarAfter = $keluarAfterCache[$keluarKey] ??= $this->hasBarangKeluarRektoratAfter($barisbmr->kd_brg, $opsik->tgl_opur);
+                    $tjmlh_opsik = 0;
+                    $hrg_bmr = 0;
+                    $databarangopsik = OpsikUrDetModel::
+                    join('opsik_rektorat','opsik_rektorat_detail.id_opur','=','opsik_rektorat.id_opur')
+                    ->where('kd_brg', '=', $barisbmr->kd_brg)
+                    ->where('tgl_opur', '<=', $tgl_akhir )
+                    ->orderBy('tgl_opur','desc')
+                    ->first();
 
-                    $detailQuery = $keluarAfter
-                        ? VOpfikRektoratDetailItemModel::join('barang_masuk_rektorat','v_opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr')
-                        : OpurdetitmModel::join('barang_masuk_rektorat','opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr');
-
-                    $databarangopsikdetailitem = $detailQuery
-                        ->where($detailQuery->getModel()->getTable().'.id_bmr', '=', $barisbmr->id_bmr)
-                        ->where('id_opurdet', '=', $opsik->id_opurdet)
-                        ->when($keluarAfter, function ($q) {
-                            return $q->where('jmlh_opurdetitm', '>', 0);
-                        })
-                        ->get();
-
-                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                    $jumlahbk = BarangKeluarRektoratModel::
+                    where('kd_brg', '=', $barisbmr->kd_brg)
+                    ->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)
+                    ->count();
+                    if($jumlahbk >= 1)
                     {
-                        $tjmlh_bkrd = $this->sumBarangKeluarRektorat($barisbmr->id_bmr, $opsik->tgl_opur, $tgl_akhir, true);
-                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
-                        $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
+                        $databarangopsikdetailitem = VOpfikRektoratDetailItemModel::
+                        join('barang_masuk_rektorat','v_opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr')
+                        ->where('v_opfik_rektorat_detail_item.id_bmr', '=', $barisbmr->id_bmr)
+                        ->where('id_opurdet', '=', $databarangopsik->id_opurdet)
+                        ->where('jmlh_opurdetitm', '>', 0)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $tjmlh_bkrd = 0;
+                            $databarangkeluar = BarangKeluarRektoratDetailModel::
+                            join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                            ->where('id_bmr', '=', $barisbmr->id_bmr)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->get();
+                            foreach($databarangkeluar as $barisbkrd)
+                            {
+                                if($barisbkrd->tglambil_bkr != $tgl_akhir)
+                                {
+                                    $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                                }
+                            }
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
+                            $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
 
-                        $datatbmr = new TempBarangMasukModel();
-                        $datatbmr->kd_brg = $barisbmr->kd_brg;
-                        $datatbmr->sisa_tbm = $tjmlh_opsik;
-                        $datatbmr->hrg_tbm = $hrg_bmr;
-                        $datatbmr->kd_lks = $lokasi;
-                        $datatbmr->user_id = $user_id;
-                        $datatbmr->jns_tbm = 1;
-                        $datatbmr->save();
+                            $datatbmr = new TempBarangMasukModel();
+                            $datatbmr->kd_brg = $barisbmr->kd_brg;
+                            $datatbmr->sisa_tbm = $tjmlh_opsik;
+                            $datatbmr->hrg_tbm = $hrg_bmr;
+                            $datatbmr->kd_lks = $lokasi;
+                            $datatbmr->user_id = $user_id;
+                            $datatbmr->jns_tbm = 1;
+                            $datatbmr->save();
+                            //echo "$barisbmf->id_bmf <br>";
+                        }
+                    }
+                    else
+                    {
+                        $databarangopsikdetailitem = OpurdetitmModel::
+                        join('barang_masuk_rektorat','opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr')
+                        ->where('opfik_rektorat_detail_item.id_bmr', '=', $barisbmr->id_bmr)
+                        ->where('id_opurdet', '=', $databarangopsik->id_opurdet)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $jumlahbarangkeluar = BarangKeluarRektoratDetailModel::
+                            join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                            ->where('id_bmr', '=', $barisopsikdetailitem->id_bmr)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->count();
+                            if($jumlahbarangkeluar >= 1)
+                            {
+                                $tjmlh_bkrd = 0;
+                                $databarangkeluar = BarangKeluarRektoratDetailModel::
+                                join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                                ->where('id_bmr', '=', $barisbmr->id_bmr)
+                                ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                                ->get();
+                                foreach($databarangkeluar as $barisbkrd)
+                                {
+                                    if($barisbkrd->tglambil_bkr != $tgl_akhir)
+                                    {
+                                        $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                $tjmlh_bkrd = 0;
+                            }
+
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
+                            $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
+
+                            $datatbmr = new TempBarangMasukModel();
+                            $datatbmr->kd_brg = $barisbmr->kd_brg;
+                            $datatbmr->sisa_tbm = $tjmlh_opsik;
+                            $datatbmr->hrg_tbm = $hrg_bmr;
+                            $datatbmr->kd_lks = $lokasi;
+                            $datatbmr->user_id = $user_id;
+                            $datatbmr->jns_tbm = 1;
+                            $datatbmr->save();
+                        }
                     }
                 }
                 else
                 {
-                    $tjmlh_bkrd = $this->sumBarangKeluarRektorat($barisbmr->id_bmr, '1900-01-01', $tgl_akhir, false);
+                    $tjmlh_bkrd = 0;
+                    $databarangkeluar = BarangKeluarRektoratDetailModel::
+                    join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                    ->where('id_bmr', '=', $barisbmr->id_bmr)
+                    ->where('tglambil_bkr', '<=', $tgl_akhir )
+                    ->get();
+                    foreach($databarangkeluar as $barisbkrd)
+                    {
+                        $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                    }
                     $jmlh_awal_bmr = $barisbmr->jmlh_awal_bmr;
-                    $sisa_tbmr = ($jmlh_awal_bmr - $tjmlh_bkrd);
+                    $sisa_tbmr = ($jmlh_awal_bmr - $tjmlh_bkrd) ;
+                    //echo "$barisbmf->id_bmf = $jmlh_awal_bmf =  $tjmlh_bkfd = $sisa_tbmf<br>";
 
                     $datatbmr = new TempBarangMasukModel();
                     $datatbmr->kd_brg = $barisbmr->kd_brg;
@@ -228,6 +208,12 @@ class LapPosisiPersediaanPrint extends Controller
         }
         elseif($lokasi == "690522020KD")
         {
+            $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->count();
+            if($jumlah != 0)
+            {
+            $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1');
+            $datadeletetbm->delete();
+            }
             $nocek = 1;
             $databarangmasukrumahsakit = BarangMasukRumahSakitModel::
             where('kd_lks', '=', $lokasi)
@@ -235,50 +221,130 @@ class LapPosisiPersediaanPrint extends Controller
             //->where('kd_brg', '=', '118101000013')
             ->orderBy('tglperolehan_bmrs','asc')
             ->get();
-            $opsikCache = [];
-            $keluarAfterCache = [];
             foreach($databarangmasukrumahsakit as $barisbmrs)
             {
-                $opsik = $opsikCache[$barisbmrs->kd_brg] ??= $this->latestOpsikRumahSakit($barisbmrs->kd_brg, $tgl_akhir);
-
-                if($opsik)
+                $jumlahopsik = OpsikUrsDetModel::
+                join('opsik_rumah_sakit','opsik_rumah_sakit_detail.id_opurs','=','opsik_rumah_sakit.id_opurs')
+                ->where('kd_brg', '=', $barisbmrs->kd_brg)
+                ->where('tgl_opurs', '<=', $tgl_akhir )
+                ->where('status_opurs', '=', 1 )
+                ->count();
+                if($jumlahopsik>=1)
                 {
-                    $keluarKey = $barisbmrs->kd_brg.'|'.$opsik->tgl_opurs;
-                    $keluarAfter = $keluarAfterCache[$keluarKey] ??= $this->hasBarangKeluarRumahSakitAfter($barisbmrs->kd_brg, $opsik->tgl_opurs);
+                    $tjmlh_opsik = 0;
+                    $hrg_bmrs = 0;
+                    $databarangopsik = OpsikUrsDetModel::
+                    join('opsik_rumah_sakit','opsik_rumah_sakit_detail.id_opurs','=','opsik_rumah_sakit.id_opurs')
+                    ->where('kd_brg', '=', $barisbmrs->kd_brg)
+                    ->where('tgl_opurs', '<=', $tgl_akhir )
+                    ->orderBy('tgl_opurs','desc')
+                    ->first();
 
-                    $detailQuery = $keluarAfter
-                        ? VOpfikRumahSakitDetailItemModel::join('barang_masuk_rumah_sakit','v_opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs')
-                        : OpursdetitmModel::join('barang_masuk_rumah_sakit','opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs');
-
-                    $databarangopsikdetailitem = $detailQuery
-                        ->where($detailQuery->getModel()->getTable().'.id_bmrs', '=', $barisbmrs->id_bmrs)
-                        ->where('id_opursdet', '=', $opsik->id_opursdet)
-                        ->when($keluarAfter, function ($q) {
-                            return $q->where('jmlh_opursdetitm', '>', 0);
-                        })
-                        ->get();
-
-                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                    $jumlahbk = BarangKeluarRumahSakitModel::
+                    where('kd_brg', '=', $barisbmrs->kd_brg)
+                    ->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)
+                    ->count();
+                    if($jumlahbk >= 1)
                     {
-                        $tjmlh_bkrsd = $this->sumBarangKeluarRumahSakit($barisbmrs->id_bmrs, $opsik->tgl_opurs, $tgl_akhir, true);
-                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
-                        $hrg_bmrs = $barisopsikdetailitem->hrg_bmrs;
+                        $databarangopsikdetailitem = VOpfikRumahSakitDetailItemModel::
+                        join('barang_masuk_rumah_sakit','v_opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs')
+                        ->where('v_opfik_rumah_sakit_detail_item.id_bmrs', '=', $barisbmrs->id_bmrs)
+                        ->where('id_opursdet', '=', $databarangopsik->id_opursdet)
+                        ->where('jmlh_opursdetitm', '>', 0)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $tjmlh_bkrsd = 0;
+                            $databarangkeluar = BarangKeluarRumahSakitDetailModel::
+                            join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                            ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->get();
+                            foreach($databarangkeluar as $barisbkrsd)
+                            {
+                                if($barisbkrsd->tglambil_bkrs != $tgl_akhir)
+                                {
+                                    $tjmlh_bkrd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                                }
+                            }
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
+                            $hrg_bmrs = $barisopsikdetailitem->hrg_bmrs;
 
-                        $datatbmrs = new TempBarangMasukModel();
-                        $datatbmrs->kd_brg = $barisbmrs->kd_brg;
-                        $datatbmrs->sisa_tbm = $tjmlh_opsik;
-                        $datatbmrs->hrg_tbm = $hrg_bmrs;
-                        $datatbmrs->kd_lks = $lokasi;
-                        $datatbmrs->user_id = $user_id;
-                        $datatbmrs->jns_tbm = 1;
-                        $datatbmrs->save();
+                            $datatbmrs = new TempBarangMasukModel();
+                            $datatbmrs->kd_brg = $barisbmrs->kd_brg;
+                            $datatbmrs->sisa_tbm = $tjmlh_opsik;
+                            $datatbmrs->hrg_tbm = $hrg_bmrs;
+                            $datatbmrs->kd_lks = $lokasi;
+                            $datatbmrs->user_id = $user_id;
+                            $datatbmrs->jns_tbm = 1;
+                            $datatbmrs->save();
+                            //echo "$barisbmf->id_bmf <br>";
+                        }
+                    }
+                    else
+                    {
+                        $databarangopsikdetailitem = OpursdetitmModel::
+                        join('barang_masuk_rumah_sakit','opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs')
+                        ->where('opfik_rumah_sakit_detail_item.id_bmrs', '=', $barisbmrs->id_bmrs)
+                        ->where('id_opursdet', '=', $databarangopsik->id_opursdet)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $jumlahbarangkeluar = BarangKeluarRumahSakitDetailModel::
+                            join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                            ->where('id_bmrs', '=', $barisopsikdetailitem->id_bmrs)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->count();
+                            if($jumlahbarangkeluar >= 1)
+                            {
+                                $tjmlh_bkrsd = 0;
+                                $databarangkeluar = BarangKeluarRumahSakitDetailModel::
+                                join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                                ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
+                                ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                                ->get();
+                                foreach($databarangkeluar as $barisbkrsd)
+                                {
+                                    if($barisbkrsd->tglambil_bkrs != $tgl_akhir)
+                                    {
+                                        $tjmlh_bkrsd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                $tjmlh_bkrsd = 0;
+                            }
+
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
+                            $hrg_bmrs = $barisopsikdetailitem->hrg_bmrs;
+
+                            $datatbmrs = new TempBarangMasukModel();
+                            $datatbmrs->kd_brg = $barisbmrs->kd_brg;
+                            $datatbmrs->sisa_tbm = $tjmlh_opsik;
+                            $datatbmrs->hrg_tbm = $hrg_bmrs;
+                            $datatbmrs->kd_lks = $lokasi;
+                            $datatbmrs->user_id = $user_id;
+                            $datatbmrs->jns_tbm = 1;
+                            $datatbmrs->save();
+                        }
                     }
                 }
                 else
                 {
-                    $tjmlh_bkrsd = $this->sumBarangKeluarRumahSakit($barisbmrs->id_bmrs, '1900-01-01', $tgl_akhir, false);
+                    $tjmlh_bkrsd = 0;
+                    $databarangkeluar = BarangKeluarRumahSakitDetailModel::
+                    join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                    ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
+                    ->where('tglambil_bkrs', '<=', $tgl_akhir )
+                    ->get();
+                    foreach($databarangkeluar as $barisbkrsd)
+                    {
+                        $tjmlh_bkrsd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                    }
                     $jmlh_awal_bmrs = $barisbmrs->jmlh_awal_bmrs;
                     $sisa_tbmrs = ($jmlh_awal_bmrs - $tjmlh_bkrsd) ;
+                    //echo "$tgl_akhir = $barisbmrs->id_bmrs = $jmlh_awal_bmrs =  $tjmlh_bkrsd = $sisa_tbmrs<br>";
 
                     $datatbmrs = new TempBarangMasukModel();
                     $datatbmrs->kd_brg = $barisbmrs->kd_brg;
@@ -294,56 +360,143 @@ class LapPosisiPersediaanPrint extends Controller
         }
         else if($lokasi == "690522000KD") //universitas
         {
+            $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->count();
+            if($jumlah != 0)
+            {
+            $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1');
+            $datadeletetbm->delete();
+            }
+
             $nocek = 1;
             $databarangmasukrektorat = BarangMasukRektoratModel::
             where('tglperolehan_bmr', '<=', $tgl_akhir )
             //->where('kd_brg', '=', '118101000013')
             ->orderBy('tglperolehan_bmr','asc')
             ->get();
-            $opsikCache = [];
-            $keluarAfterCache = [];
             foreach($databarangmasukrektorat as $barisbmr)
             {
-                $opsik = $opsikCache[$barisbmr->kd_brg] ??= $this->latestOpsikRektorat($barisbmr->kd_brg, $tgl_akhir);
-
-                if($opsik)
+                $jumlahopsik = OpsikUrDetModel::
+                join('opsik_rektorat','opsik_rektorat_detail.id_opur','=','opsik_rektorat.id_opur')
+                ->where('kd_brg', '=', $barisbmr->kd_brg)
+                ->where('tgl_opur', '<=', $tgl_akhir )
+                ->where('status_opur', '=', 1 )
+                ->count();
+                if($jumlahopsik>=1)
                 {
-                    $keluarKey = $barisbmr->kd_brg.'|'.$opsik->tgl_opur;
-                    $keluarAfter = $keluarAfterCache[$keluarKey] ??= $this->hasBarangKeluarRektoratAfter($barisbmr->kd_brg, $opsik->tgl_opur);
+                    $tjmlh_opsik = 0;
+                    $hrg_bmr = 0;
+                    $databarangopsik = OpsikUrDetModel::
+                    join('opsik_rektorat','opsik_rektorat_detail.id_opur','=','opsik_rektorat.id_opur')
+                    ->where('kd_brg', '=', $barisbmr->kd_brg)
+                    ->where('tgl_opur', '<=', $tgl_akhir )
+                    ->orderBy('tgl_opur','desc')
+                    ->first();
 
-                    $detailQuery = $keluarAfter
-                        ? VOpfikRektoratDetailItemModel::join('barang_masuk_rektorat','v_opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr')
-                        : OpurdetitmModel::join('barang_masuk_rektorat','opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr');
-
-                    $databarangopsikdetailitem = $detailQuery
-                        ->where($detailQuery->getModel()->getTable().'.id_bmr', '=', $barisbmr->id_bmr)
-                        ->where('id_opurdet', '=', $opsik->id_opurdet)
-                        ->when($keluarAfter, function ($q) {
-                            return $q->where('jmlh_opurdetitm', '>', 0);
-                        })
-                        ->get();
-
-                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                    $jumlahbk = BarangKeluarRektoratModel::
+                    where('kd_brg', '=', $barisbmr->kd_brg)
+                    ->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)
+                    ->count();
+                    if($jumlahbk >= 1)
                     {
-                        $tjmlh_bkrd = $this->sumBarangKeluarRektorat($barisbmr->id_bmr, $opsik->tgl_opur, $tgl_akhir, true);
-                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
-                        $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
+                        $databarangopsikdetailitem = VOpfikRektoratDetailItemModel::
+                        join('barang_masuk_rektorat','v_opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr')
+                        ->where('v_opfik_rektorat_detail_item.id_bmr', '=', $barisbmr->id_bmr)
+                        ->where('id_opurdet', '=', $databarangopsik->id_opurdet)
+                        ->where('jmlh_opurdetitm', '>', 0)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $tjmlh_bkrd = 0;
+                            $databarangkeluar = BarangKeluarRektoratDetailModel::
+                            join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                            ->where('id_bmr', '=', $barisbmr->id_bmr)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->get();
+                            foreach($databarangkeluar as $barisbkrd)
+                            {
+                                if($barisbkrd->tglambil_bkr != $tgl_akhir)
+                                {
+                                    $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                                }
+                            }
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
+                            $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
 
-                        $datatbmr = new TempBarangMasukModel();
-                        $datatbmr->kd_brg = $barisbmr->kd_brg;
-                        $datatbmr->sisa_tbm = $tjmlh_opsik;
-                        $datatbmr->hrg_tbm = $hrg_bmr;
-                        $datatbmr->kd_lks = $lokasi;
-                        $datatbmr->user_id = $user_id;
-                        $datatbmr->jns_tbm = 1;
-                        $datatbmr->save();
+                            $datatbmr = new TempBarangMasukModel();
+                            $datatbmr->kd_brg = $barisbmr->kd_brg;
+                            $datatbmr->sisa_tbm = $tjmlh_opsik;
+                            $datatbmr->hrg_tbm = $hrg_bmr;
+                            $datatbmr->kd_lks = $lokasi;
+                            $datatbmr->user_id = $user_id;
+                            $datatbmr->jns_tbm = 1;
+                            $datatbmr->save();
+                            //echo "$barisbmf->id_bmf <br>";
+                        }
+                    }
+                    else
+                    {
+                        $databarangopsikdetailitem = OpurdetitmModel::
+                        join('barang_masuk_rektorat','opfik_rektorat_detail_item.id_bmr','=','barang_masuk_rektorat.id_bmr')
+                        ->where('opfik_rektorat_detail_item.id_bmr', '=', $barisbmr->id_bmr)
+                        ->where('id_opurdet', '=', $databarangopsik->id_opurdet)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $jumlahbarangkeluar = BarangKeluarRektoratDetailModel::
+                            join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                            ->where('id_bmr', '=', $barisopsikdetailitem->id_bmr)
+                            ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                            ->count();
+                            if($jumlahbarangkeluar >= 1)
+                            {
+                                $tjmlh_bkrd = 0;
+                                $databarangkeluar = BarangKeluarRektoratDetailModel::
+                                join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                                ->where('id_bmr', '=', $barisbmr->id_bmr)
+                                ->whereBetween('tglambil_bkr', [$databarangopsik->tgl_opur, $tgl_akhir])
+                                ->get();
+                                foreach($databarangkeluar as $barisbkrd)
+                                {
+                                    if($barisbkrd->tglambil_bkr != $tgl_akhir)
+                                    {
+                                        $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                $tjmlh_bkrd = 0;
+                            }
+
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
+                            $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
+
+                            $datatbmr = new TempBarangMasukModel();
+                            $datatbmr->kd_brg = $barisbmr->kd_brg;
+                            $datatbmr->sisa_tbm = $tjmlh_opsik;
+                            $datatbmr->hrg_tbm = $hrg_bmr;
+                            $datatbmr->kd_lks = $lokasi;
+                            $datatbmr->user_id = $user_id;
+                            $datatbmr->jns_tbm = 1;
+                            $datatbmr->save();
+                        }
                     }
                 }
                 else
                 {
-                    $tjmlh_bkrd = $this->sumBarangKeluarRektorat($barisbmr->id_bmr, '1900-01-01', $tgl_akhir, false);
+                    $tjmlh_bkrd = 0;
+                    $databarangkeluar = BarangKeluarRektoratDetailModel::
+                    join('barang_keluar_rektorat','barang_keluar_rektorat_detail.id_bkr','=','barang_keluar_rektorat.id_bkr')
+                    ->where('id_bmr', '=', $barisbmr->id_bmr)
+                    ->where('tglambil_bkr', '<=', $tgl_akhir )
+                    ->get();
+                    foreach($databarangkeluar as $barisbkrd)
+                    {
+                        $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                    }
                     $jmlh_awal_bmr = $barisbmr->jmlh_awal_bmr;
                     $sisa_tbmr = ($jmlh_awal_bmr - $tjmlh_bkrd) ;
+                    //echo "$barisbmf->id_bmf = $jmlh_awal_bmf =  $tjmlh_bkfd = $sisa_tbmf<br>";
 
                     $datatbmr = new TempBarangMasukModel();
                     $datatbmr->kd_brg = $barisbmr->kd_brg;
@@ -363,50 +516,130 @@ class LapPosisiPersediaanPrint extends Controller
             //->where('kd_brg', '=', '118101000013')
             ->orderBy('tglperolehan_bmrs','asc')
             ->get();
-            $opsikCache = [];
-            $keluarAfterCache = [];
             foreach($databarangmasukrumahsakit as $barisbmrs)
             {
-                $opsik = $opsikCache[$barisbmrs->kd_brg] ??= $this->latestOpsikRumahSakit($barisbmrs->kd_brg, $tgl_akhir);
-
-                if($opsik)
+                $jumlahopsik = OpsikUrsDetModel::
+                join('opsik_rumah_sakit','opsik_rumah_sakit_detail.id_opurs','=','opsik_rumah_sakit.id_opurs')
+                ->where('kd_brg', '=', $barisbmrs->kd_brg)
+                ->where('tgl_opurs', '<=', $tgl_akhir )
+                ->where('status_opurs', '=', 1 )
+                ->count();
+                if($jumlahopsik>=1)
                 {
-                    $keluarKey = $barisbmrs->kd_brg.'|'.$opsik->tgl_opurs;
-                    $keluarAfter = $keluarAfterCache[$keluarKey] ??= $this->hasBarangKeluarRumahSakitAfter($barisbmrs->kd_brg, $opsik->tgl_opurs);
+                    $tjmlh_opsik = 0;
+                    $hrg_bmrs = 0;
+                    $databarangopsik = OpsikUrsDetModel::
+                    join('opsik_rumah_sakit','opsik_rumah_sakit_detail.id_opurs','=','opsik_rumah_sakit.id_opurs')
+                    ->where('kd_brg', '=', $barisbmrs->kd_brg)
+                    ->where('tgl_opurs', '<=', $tgl_akhir )
+                    ->orderBy('tgl_opurs','desc')
+                    ->first();
 
-                    $detailQuery = $keluarAfter
-                        ? VOpfikRumahSakitDetailItemModel::join('barang_masuk_rumah_sakit','v_opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs')
-                        : OpursdetitmModel::join('barang_masuk_rumah_sakit','opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs');
-
-                    $databarangopsikdetailitem = $detailQuery
-                        ->where($detailQuery->getModel()->getTable().'.id_bmrs', '=', $barisbmrs->id_bmrs)
-                        ->where('id_opursdet', '=', $opsik->id_opursdet)
-                        ->when($keluarAfter, function ($q) {
-                            return $q->where('jmlh_opursdetitm', '>', 0);
-                        })
-                        ->get();
-
-                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                    $jumlahbk = BarangKeluarRumahSakitModel::
+                    where('kd_brg', '=', $barisbmrs->kd_brg)
+                    ->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)
+                    ->count();
+                    if($jumlahbk >= 1)
                     {
-                        $tjmlh_bkrsd = $this->sumBarangKeluarRumahSakit($barisbmrs->id_bmrs, $opsik->tgl_opurs, $tgl_akhir, true);
-                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
-                        $hrg_bmrs = $barisopsikdetailitem->hrg_bmrs;
+                        $databarangopsikdetailitem = VOpfikRumahSakitDetailItemModel::
+                        join('barang_masuk_rumah_sakit','v_opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs')
+                        ->where('v_opfik_rumah_sakit_detail_item.id_bmrs', '=', $barisbmrs->id_bmrs)
+                        ->where('id_opursdet', '=', $databarangopsik->id_opursdet)
+                        ->where('jmlh_opursdetitm', '>', 0)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $tjmlh_bkrsd = 0;
+                            $databarangkeluar = BarangKeluarRumahSakitDetailModel::
+                            join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                            ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->get();
+                            foreach($databarangkeluar as $barisbkrsd)
+                            {
+                                if($barisbkrsd->tglambil_bkrs != $tgl_akhir)
+                                {
+                                    $tjmlh_bkrd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                                }
+                            }
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
+                            $hrg_bmrs = $barisopsikdetailitem->hrg_bmrs;
 
-                        $datatbmrs = new TempBarangMasukModel();
-                        $datatbmrs->kd_brg = $barisbmrs->kd_brg;
-                        $datatbmrs->sisa_tbm = $tjmlh_opsik;
-                        $datatbmrs->hrg_tbm = $hrg_bmrs;
-                        $datatbmrs->kd_lks = $lokasi;
-                        $datatbmrs->user_id = $user_id;
-                        $datatbmrs->jns_tbm = 1;
-                        $datatbmrs->save();
+                            $datatbmrs = new TempBarangMasukModel();
+                            $datatbmrs->kd_brg = $barisbmrs->kd_brg;
+                            $datatbmrs->sisa_tbm = $tjmlh_opsik;
+                            $datatbmrs->hrg_tbm = $hrg_bmrs;
+                            $datatbmrs->kd_lks = $lokasi;
+                            $datatbmrs->user_id = $user_id;
+                            $datatbmrs->jns_tbm = 1;
+                            $datatbmrs->save();
+                            //echo "$barisbmf->id_bmf <br>";
+                        }
+                    }
+                    else
+                    {
+                        $databarangopsikdetailitem = OpursdetitmModel::
+                        join('barang_masuk_rumah_sakit','opfik_rumah_sakit_detail_item.id_bmrs','=','barang_masuk_rumah_sakit.id_bmrs')
+                        ->where('opfik_rumah_sakit_detail_item.id_bmrs', '=', $barisbmrs->id_bmrs)
+                        ->where('id_opursdet', '=', $databarangopsik->id_opursdet)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $jumlahbarangkeluar = BarangKeluarRumahSakitDetailModel::
+                            join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                            ->where('id_bmrs', '=', $barisopsikdetailitem->id_bmrs)
+                            ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                            ->count();
+                            if($jumlahbarangkeluar >= 1)
+                            {
+                                $tjmlh_bkrsd = 0;
+                                $databarangkeluar = BarangKeluarRumahSakitDetailModel::
+                                join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                                ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
+                                ->whereBetween('tglambil_bkrs', [$databarangopsik->tgl_opurs, $tgl_akhir])
+                                ->get();
+                                foreach($databarangkeluar as $barisbkrsd)
+                                {
+                                    if($barisbkrsd->tglambil_bkrs != $tgl_akhir)
+                                    {
+                                        $tjmlh_bkrsd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                $tjmlh_bkrsd = 0;
+                            }
+
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
+                            $hrg_bmrs = $barisopsikdetailitem->hrg_bmrs;
+
+                            $datatbmrs = new TempBarangMasukModel();
+                            $datatbmrs->kd_brg = $barisbmrs->kd_brg;
+                            $datatbmrs->sisa_tbm = $tjmlh_opsik;
+                            $datatbmrs->hrg_tbm = $hrg_bmrs;
+                            $datatbmrs->kd_lks = $lokasi;
+                            $datatbmrs->user_id = $user_id;
+                            $datatbmrs->jns_tbm = 1;
+                            $datatbmrs->save();
+                        }
                     }
                 }
                 else
                 {
-                    $tjmlh_bkrsd = $this->sumBarangKeluarRumahSakit($barisbmrs->id_bmrs, '1900-01-01', $tgl_akhir, false);
+                    $tjmlh_bkrsd = 0;
+                    $databarangkeluar = BarangKeluarRumahSakitDetailModel::
+                    join('barang_keluar_rumah_sakit','barang_keluar_rumah_sakit_detail.id_bkrs','=','barang_keluar_rumah_sakit.id_bkrs')
+                    ->where('id_bmrs', '=', $barisbmrs->id_bmrs)
+                    ->where('tglambil_bkrs', '<=', $tgl_akhir )
+                    ->get();
+                    foreach($databarangkeluar as $barisbkrsd)
+                    {
+                        $tjmlh_bkrsd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                    }
                     $jmlh_awal_bmrs = $barisbmrs->jmlh_awal_bmrs;
                     $sisa_tbmrs = ($jmlh_awal_bmrs - $tjmlh_bkrsd) ;
+                    //echo "$tgl_akhir = $barisbmrs->id_bmrs = $jmlh_awal_bmrs =  $tjmlh_bkrsd = $sisa_tbmrs<br>";
 
                     $datatbmrs = new TempBarangMasukModel();
                     $datatbmrs->kd_brg = $barisbmrs->kd_brg;
@@ -425,50 +658,130 @@ class LapPosisiPersediaanPrint extends Controller
             where('tglperolehan_bmf', '<=', $tgl_akhir )
             ->orderBy('tglperolehan_bmf','asc')
             ->get();
-            $opsikCache = [];
-            $keluarAfterCache = [];
             foreach($databarangmasukfakultas as $barisbmf)
             {
-                $opsik = $opsikCache[$barisbmf->kd_brg] ??= $this->latestOpsikFakultas($barisbmf->kd_brg, $tgl_akhir);
-
-                if($opsik)
+                $jumlahopsik = OpsikFkDetModel::
+                join('opsik_fakultas','opsik_fakultas_detail.id_opfk','=','opsik_fakultas.id_opfk')
+                ->where('kd_brg', '=', $barisbmf->kd_brg)
+                ->where('tgl_opfk', '<=', $tgl_akhir )
+                ->where('status_opfk', '=', 1 )
+                ->count();
+                if($jumlahopsik>=1)
                 {
-                    $keluarKey = $barisbmf->kd_brg.'|'.$opsik->tgl_opfk;
-                    $keluarAfter = $keluarAfterCache[$keluarKey] ??= $this->hasBarangKeluarFakultasAfter($barisbmf->kd_brg, $opsik->tgl_opfk);
+                    $tjmlh_opsik = 0;
+                    $hrg_bmf = 0;
+                    $databarangopsik = OpsikFkDetModel::
+                    join('opsik_fakultas','opsik_fakultas_detail.id_opfk','=','opsik_fakultas.id_opfk')
+                    ->where('kd_brg', '=', $barisbmf->kd_brg)
+                    ->where('tgl_opfk', '<=', $tgl_akhir )
+                    ->orderBy('tgl_opfk','desc')
+                    ->first();
 
-                    $detailQuery = $keluarAfter
-                        ? VOpfikFakultasDetailItemModel::join('barang_masuk_fakultas','v_opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
-                        : OpfkdetitmModel::join('barang_masuk_fakultas','opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf');
-
-                    $databarangopsikdetailitem = $detailQuery
-                        ->where($detailQuery->getModel()->getTable().'.id_bmf', '=', $barisbmf->id_bmf)
-                        ->where('id_opfkdet', '=', $opsik->id_opfkdet)
-                        ->when($keluarAfter, function ($q) {
-                            return $q->where('jmlh_opfkdetitm', '>', 0);
-                        })
-                        ->get();
-
-                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                    $jumlahbk = BarangKeluarFakultasModel::
+                    where('kd_brg', '=', $barisbmf->kd_brg)
+                    ->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)
+                    ->count();
+                    if($jumlahbk >= 1)
                     {
-                        $tjmlh_bkfd = $this->sumBarangKeluarFakultas($barisbmf->id_bmf, $opsik->tgl_opfk, $tgl_akhir, true);
-                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
-                        $hrg_bmf = $barisopsikdetailitem->hrg_bmf;
+                        $databarangopsikdetailitem = VOpfikFakultasDetailItemModel::
+                        join('barang_masuk_fakultas','v_opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
+                        ->where('v_opfik_fakultas_detail_item.id_bmf', '=', $barisbmf->id_bmf)
+                        ->where('id_opfkdet', '=', $databarangopsik->id_opfkdet)
+                        ->where('jmlh_opfkdetitm', '>', 0)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $tjmlh_bkfd = 0;
+                            $databarangkeluar = BarangKeluarFakultasDetailModel::
+                            join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                            ->where('id_bmf', '=', $barisbmf->id_bmf)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->get();
+                            foreach($databarangkeluar as $barisbkfd)
+                            {
+                                if($barisbkfd->tglambil_bkf != $tgl_akhir)
+                                {
+                                    $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                                }
+                            }
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
+                            $hrg_bmf = $barisopsikdetailitem->hrg_bmf;
 
-                        $datatbmf = new TempBarangMasukModel();
-                        $datatbmf->kd_brg = $barisbmf->kd_brg;
-                        $datatbmf->sisa_tbm = $tjmlh_opsik;
-                        $datatbmf->hrg_tbm = $hrg_bmf;
-                        $datatbmf->kd_lks = $lokasi;
-                        $datatbmf->user_id = $user_id;
-                        $datatbmf->jns_tbm = 1;
-                        $datatbmf->save();
+                            $datatbmf = new TempBarangMasukModel();
+                            $datatbmf->kd_brg = $barisbmf->kd_brg;
+                            $datatbmf->sisa_tbm = $tjmlh_opsik;
+                            $datatbmf->hrg_tbm = $hrg_bmf;
+                            $datatbmf->kd_lks = $lokasi;
+                            $datatbmf->user_id = $user_id;
+                            $datatbmf->jns_tbm = 1;
+                            $datatbmf->save();
+                            //echo "$barisbmf->id_bmf <br>";
+                        }
+                    }
+                    else
+                    {
+                        $databarangopsikdetailitem = OpfkdetitmModel::
+                        join('barang_masuk_fakultas','opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
+                        ->where('opfik_fakultas_detail_item.id_bmf', '=', $barisbmf->id_bmf)
+                        ->where('id_opfkdet', '=', $databarangopsik->id_opfkdet)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $jumlahbarangkeluar = BarangKeluarFakultasDetailModel::
+                            join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                            ->where('id_bmf', '=', $barisopsikdetailitem->id_bmf)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->count();
+                            if($jumlahbarangkeluar >= 1)
+                            {
+                                $tjmlh_bkfd = 0;
+                                $databarangkeluar = BarangKeluarFakultasDetailModel::
+                                join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                                ->where('id_bmf', '=', $barisbmf->id_bmf)
+                                ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                                ->get();
+                                foreach($databarangkeluar as $barisbkfd)
+                                {
+                                    if($barisbkfd->tglambil_bkf != $tgl_akhir)
+                                    {
+                                        $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                $tjmlh_bkfd = 0;
+                            }
+
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
+                            $hrg_bmf = $barisopsikdetailitem->hrg_bmf;
+
+                            $datatbmf = new TempBarangMasukModel();
+                            $datatbmf->kd_brg = $barisbmf->kd_brg;
+                            $datatbmf->sisa_tbm = $tjmlh_opsik;
+                            $datatbmf->hrg_tbm = $hrg_bmf;
+                            $datatbmf->kd_lks = $lokasi;
+                            $datatbmf->user_id = $user_id;
+                            $datatbmf->jns_tbm = 1;
+                            $datatbmf->save();
+                        }
                     }
                 }
                 else
                 {
-                    $tjmlh_bkfd = $this->sumBarangKeluarFakultas($barisbmf->id_bmf, '1900-01-01', $tgl_akhir, false);
+                    $tjmlh_bkfd = 0;
+                    $databarangkeluar = BarangKeluarFakultasDetailModel::
+                    join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                    ->where('id_bmf', '=', $barisbmf->id_bmf)
+                    ->where('tglambil_bkf', '<=', $tgl_akhir )
+                    ->get();
+                    foreach($databarangkeluar as $barisbkfd)
+                    {
+                        $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                    }
                     $jmlh_awal_bmf = $barisbmf->jmlh_awal_bmf;
                     $sisa_tbmf = ($jmlh_awal_bmf - $tjmlh_bkfd) ;
+                    //echo "$barisbmf->id_bmf = $jmlh_awal_bmf =  $tjmlh_bkfd = $sisa_tbmf<br>";
 
                     $datatbmf = new TempBarangMasukModel();
                     $datatbmf->kd_brg = $barisbmf->kd_brg;
@@ -484,9 +797,21 @@ class LapPosisiPersediaanPrint extends Controller
         }
         else if($lokasi == "")
         {
+            $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->count();
+            if($jumlah != 0)
+            {
+            $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1');
+            $datadeletetbm->delete();
+            }
         }
         else
         {
+            $jumlah = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1')->count();
+            if($jumlah != 0)
+            {
+            $datadeletetbm = TempBarangMasukModel::where('user_id', $user_id)->where('jns_tbm','=','1');
+            $datadeletetbm->delete();
+            }
             $datafakultas = FakultasModel::where('kd_lks', $lokasi)->first();
             $id_fk = $datafakultas->id_fk;
 
@@ -497,50 +822,133 @@ class LapPosisiPersediaanPrint extends Controller
             //->where('kd_brg', '=', '118101000013')
             ->orderBy('tglperolehan_bmf','asc')
             ->get();
-            $opsikCache = [];
-            $keluarAfterCache = [];
             foreach($databarangmasukfakultas as $barisbmf)
             {
-                $opsik = $opsikCache[$barisbmf->kd_brg] ??= $this->latestOpsikFakultas($barisbmf->kd_brg, $tgl_akhir, $id_fk);
-
-                if($opsik)
+                $jumlahopsik = OpsikFkDetModel::
+                join('opsik_fakultas','opsik_fakultas_detail.id_opfk','=','opsik_fakultas.id_opfk')
+                ->where('id_fk', '=', $id_fk)
+                ->where('kd_brg', '=', $barisbmf->kd_brg)
+                ->where('tgl_opfk', '<=', $tgl_akhir )
+                ->where('status_opfk', '=', 1 )
+                ->count();
+                if($jumlahopsik>=1)
                 {
-                    $keluarKey = $barisbmf->kd_brg.'|'.$opsik->tgl_opfk.'|'.$id_fk;
-                    $keluarAfter = $keluarAfterCache[$keluarKey] ??= $this->hasBarangKeluarFakultasAfter($barisbmf->kd_brg, $opsik->tgl_opfk, $id_fk);
+                    $tjmlh_opsik = 0;
+                    $hrg_bmf = 0;
+                    $databarangopsik = OpsikFkDetModel::
+                    join('opsik_fakultas','opsik_fakultas_detail.id_opfk','=','opsik_fakultas.id_opfk')
+                    ->where('id_fk', '=', $id_fk)
+                    ->where('kd_brg', '=', $barisbmf->kd_brg)
+                    ->where('tgl_opfk', '<=', $tgl_akhir )
+                    ->orderBy('tgl_opfk','desc')
+                    ->first();
 
-                    $detailQuery = $keluarAfter
-                        ? VOpfikFakultasDetailItemModel::join('barang_masuk_fakultas','v_opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
-                        : OpfkdetitmModel::join('barang_masuk_fakultas','opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf');
-
-                    $databarangopsikdetailitem = $detailQuery
-                        ->where($detailQuery->getModel()->getTable().'.id_bmf', '=', $barisbmf->id_bmf)
-                        ->where('id_opfkdet', '=', $opsik->id_opfkdet)
-                        ->when($keluarAfter, function ($q) {
-                            return $q->where('jmlh_opfkdetitm', '>', 0);
-                        })
-                        ->get();
-
-                    foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                    $jumlahbk = BarangKeluarFakultasModel::
+                    where('id_fk', '=', $id_fk)
+                    ->where('kd_brg', '=', $barisbmf->kd_brg)
+                    ->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)
+                    ->count();
+                    if($jumlahbk >= 1)
                     {
-                        $tjmlh_bkfd = $this->sumBarangKeluarFakultas($barisbmf->id_bmf, $opsik->tgl_opfk, $tgl_akhir, true);
-                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
-                        $hrg_bmf = $barisopsikdetailitem->hrg_bmf;
+                        $databarangopsikdetailitem = VOpfikFakultasDetailItemModel::
+                        join('barang_masuk_fakultas','v_opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
+                        ->where('v_opfik_fakultas_detail_item.id_bmf', '=', $barisbmf->id_bmf)
+                        ->where('id_opfkdet', '=', $databarangopsik->id_opfkdet)
+                        ->where('jmlh_opfkdetitm', '>', 0)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $tjmlh_bkfd = 0;
+                            $databarangkeluar = BarangKeluarFakultasDetailModel::
+                            join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                            ->where('id_bmf', '=', $barisbmf->id_bmf)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->get();
+                            foreach($databarangkeluar as $barisbkfd)
+                            {
+                                if($barisbkfd->tglambil_bkf != $tgl_akhir)
+                                {
+                                    $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                                }
+                            }
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
+                            $hrg_bmf = $barisopsikdetailitem->hrg_bmf;
 
-                        $datatbmf = new TempBarangMasukModel();
-                        $datatbmf->kd_brg = $barisbmf->kd_brg;
-                        $datatbmf->sisa_tbm = $tjmlh_opsik;
-                        $datatbmf->hrg_tbm = $hrg_bmf;
-                        $datatbmf->kd_lks = $lokasi;
-                        $datatbmf->user_id = $user_id;
-                        $datatbmf->jns_tbm = 1;
-                        $datatbmf->save();
+                            $datatbmf = new TempBarangMasukModel();
+                            $datatbmf->kd_brg = $barisbmf->kd_brg;
+                            $datatbmf->sisa_tbm = $tjmlh_opsik;
+                            $datatbmf->hrg_tbm = $hrg_bmf;
+                            $datatbmf->kd_lks = $lokasi;
+                            $datatbmf->user_id = $user_id;
+                            $datatbmf->jns_tbm = 1;
+                            $datatbmf->save();
+                            //echo "$barisbmf->id_bmf <br>";
+                        }
+                    }
+                    else
+                    {
+                        $databarangopsikdetailitem = OpfkdetitmModel::
+                        join('barang_masuk_fakultas','opfik_fakultas_detail_item.id_bmf','=','barang_masuk_fakultas.id_bmf')
+                        ->where('opfik_fakultas_detail_item.id_bmf', '=', $barisbmf->id_bmf)
+                        ->where('id_opfkdet', '=', $databarangopsik->id_opfkdet)
+                        ->get();
+                        foreach($databarangopsikdetailitem as $barisopsikdetailitem)
+                        {
+                            $jumlahbarangkeluar = BarangKeluarFakultasDetailModel::
+                            join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                            ->where('id_bmf', '=', $barisopsikdetailitem->id_bmf)
+                            ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                            ->count();
+                            if($jumlahbarangkeluar >= 1)
+                            {
+                                $tjmlh_bkfd = 0;
+                                $databarangkeluar = BarangKeluarFakultasDetailModel::
+                                join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                                ->where('id_bmf', '=', $barisbmf->id_bmf)
+                                ->whereBetween('tglambil_bkf', [$databarangopsik->tgl_opfk, $tgl_akhir])
+                                ->get();
+                                foreach($databarangkeluar as $barisbkfd)
+                                {
+                                    if($barisbkfd->tglambil_bkf != $tgl_akhir)
+                                    {
+                                        $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                $tjmlh_bkfd = 0;
+                            }
+
+                            $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
+                            $hrg_bmf = $barisopsikdetailitem->hrg_bmf;
+
+                            $datatbmf = new TempBarangMasukModel();
+                            $datatbmf->kd_brg = $barisbmf->kd_brg;
+                            $datatbmf->sisa_tbm = $tjmlh_opsik;
+                            $datatbmf->hrg_tbm = $hrg_bmf;
+                            $datatbmf->kd_lks = $lokasi;
+                            $datatbmf->user_id = $user_id;
+                            $datatbmf->jns_tbm = 1;
+                            $datatbmf->save();
+                        }
                     }
                 }
                 else
                 {
-                    $tjmlh_bkfd = $this->sumBarangKeluarFakultas($barisbmf->id_bmf, '1900-01-01', $tgl_akhir, false);
+                    $tjmlh_bkfd = 0;
+                    $databarangkeluar = BarangKeluarFakultasDetailModel::
+                    join('barang_keluar_fakultas','barang_keluar_fakultas_detail.id_bkf','=','barang_keluar_fakultas.id_bkf')
+                    ->where('id_bmf', '=', $barisbmf->id_bmf)
+                    ->where('tglambil_bkf', '<=', $tgl_akhir )
+                    ->get();
+                    foreach($databarangkeluar as $barisbkfd)
+                    {
+                        $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                    }
                     $jmlh_awal_bmf = $barisbmf->jmlh_awal_bmf;
                     $sisa_tbmf = ($jmlh_awal_bmf - $tjmlh_bkfd) ;
+                    //echo "$barisbmf->id_bmf = $jmlh_awal_bmf =  $tjmlh_bkfd = $sisa_tbmf<br>";
 
                     $datatbmf = new TempBarangMasukModel();
                     $datatbmf->kd_brg = $barisbmf->kd_brg;
