@@ -280,18 +280,29 @@ class LapPosisiPersediaanPrint extends Controller
         $allIdBmr  = $rows->pluck('id_bmr')->all();
         $allKdBrg  = $rows->pluck('kd_brg')->unique()->values()->all();
 
-        // 2. Opsik valid (status=1) terbaru per kd_brg
-        //    Sesuai asli: count cek pakai status=1, first() ambil terbaru tanpa filter status
-        $opsikSnap = DB::table('opsik_rektorat_detail as od')
+        // 2a. Cek kd_brg mana yang punya opsik valid (status=1)
+        $kdBrgWithOpsik = DB::table('opsik_rektorat_detail as od')
             ->join('opsik_rektorat as o', 'od.id_opur', '=', 'o.id_opur')
             ->whereIn('od.kd_brg', $allKdBrg)
             ->where('o.tgl_opur', '<=', $tglAkhir)
             ->where('o.status_opur', 1)
-            ->orderBy('o.tgl_opur', 'desc')
-            ->select('od.id_opurdet', 'od.kd_brg', 'o.tgl_opur')
-            ->get()
-            ->groupBy('kd_brg')
-            ->map(fn($g) => $g->first()); // terbaru per kd_brg
+            ->distinct()
+            ->pluck('od.kd_brg')
+            ->all();
+
+        // 2b. Ambil opsik TERBARU per kd_brg TANPA filter status (sesuai kode asli)
+        $opsikSnap = collect();
+        if (!empty($kdBrgWithOpsik)) {
+            $opsikSnap = DB::table('opsik_rektorat_detail as od')
+                ->join('opsik_rektorat as o', 'od.id_opur', '=', 'o.id_opur')
+                ->whereIn('od.kd_brg', $kdBrgWithOpsik)
+                ->where('o.tgl_opur', '<=', $tglAkhir)
+                ->orderBy('o.tgl_opur', 'desc')
+                ->select('od.id_opurdet', 'od.kd_brg', 'o.tgl_opur')
+                ->get()
+                ->groupBy('kd_brg')
+                ->map(fn($g) => $g->first());
+        }
 
         // 3. Cek kd_brg yang ada barang keluar SETELAH tgl opsik
         //    Sesuai asli: cek count(bkr > tgl_opur), pakai barang_keluar_rektorat header
@@ -428,17 +439,28 @@ class LapPosisiPersediaanPrint extends Controller
         $allIdBmrs = $rows->pluck('id_bmrs')->all();
         $allKdBrg  = $rows->pluck('kd_brg')->unique()->values()->all();
 
-        // Opsik valid terbaru per kd_brg
-        $opsikSnap = DB::table('opsik_rumah_sakit_detail as od')
+        // Opsik: cek existence (status=1), lalu ambil terbaru TANPA filter status
+        $kdBrgWithOpsik = DB::table('opsik_rumah_sakit_detail as od')
             ->join('opsik_rumah_sakit as o', 'od.id_opurs', '=', 'o.id_opurs')
             ->whereIn('od.kd_brg', $allKdBrg)
             ->where('o.tgl_opurs', '<=', $tglAkhir)
             ->where('o.status_opurs', 1)
-            ->orderBy('o.tgl_opurs', 'desc')
-            ->select('od.id_opursdet', 'od.kd_brg', 'o.tgl_opurs')
-            ->get()
-            ->groupBy('kd_brg')
-            ->map(fn($g) => $g->first());
+            ->distinct()
+            ->pluck('od.kd_brg')
+            ->all();
+
+        $opsikSnap = collect();
+        if (!empty($kdBrgWithOpsik)) {
+            $opsikSnap = DB::table('opsik_rumah_sakit_detail as od')
+                ->join('opsik_rumah_sakit as o', 'od.id_opurs', '=', 'o.id_opurs')
+                ->whereIn('od.kd_brg', $kdBrgWithOpsik)
+                ->where('o.tgl_opurs', '<=', $tglAkhir)
+                ->orderBy('o.tgl_opurs', 'desc')
+                ->select('od.id_opursdet', 'od.kd_brg', 'o.tgl_opurs')
+                ->get()
+                ->groupBy('kd_brg')
+                ->map(fn($g) => $g->first());
+        }
 
         $kdBrgWithKeluarAfterOpsik = [];
         if ($opsikSnap->isNotEmpty()) {
@@ -565,21 +587,33 @@ class LapPosisiPersediaanPrint extends Controller
         $allIdBmf = $rows->pluck('id_bmf')->all();
         $allKdBrg = $rows->pluck('kd_brg')->unique()->values()->all();
 
-        // Opsik valid terbaru per kd_brg (dengan filter id_fk jika per-Fakultas)
-        $opsikQ = DB::table('opsik_fakultas_detail as od')
+        // Opsik: cek existence (status=1), lalu ambil terbaru TANPA filter status
+        $existQ = DB::table('opsik_fakultas_detail as od')
             ->join('opsik_fakultas as o', 'od.id_opfk', '=', 'o.id_opfk')
             ->whereIn('od.kd_brg', $allKdBrg)
             ->where('o.tgl_opfk', '<=', $tglAkhir)
             ->where('o.status_opfk', 1);
         if ($idFkFilter !== null) {
-            $opsikQ->where('o.id_fk', $idFkFilter);
+            $existQ->where('o.id_fk', $idFkFilter);
         }
-        $opsikSnap = $opsikQ
-            ->orderBy('o.tgl_opfk', 'desc')
-            ->select('od.id_opfkdet', 'od.kd_brg', 'o.tgl_opfk')
-            ->get()
-            ->groupBy('kd_brg')
-            ->map(fn($g) => $g->first());
+        $kdBrgWithOpsik = $existQ->distinct()->pluck('od.kd_brg')->all();
+
+        $opsikSnap = collect();
+        if (!empty($kdBrgWithOpsik)) {
+            $snapQ = DB::table('opsik_fakultas_detail as od')
+                ->join('opsik_fakultas as o', 'od.id_opfk', '=', 'o.id_opfk')
+                ->whereIn('od.kd_brg', $kdBrgWithOpsik)
+                ->where('o.tgl_opfk', '<=', $tglAkhir);
+            if ($idFkFilter !== null) {
+                $snapQ->where('o.id_fk', $idFkFilter);
+            }
+            $opsikSnap = $snapQ
+                ->orderBy('o.tgl_opfk', 'desc')
+                ->select('od.id_opfkdet', 'od.kd_brg', 'o.tgl_opfk')
+                ->get()
+                ->groupBy('kd_brg')
+                ->map(fn($g) => $g->first());
+        }
 
         // Cek keluar setelah opsik (dengan filter id_fk jika per-Fakultas)
         $kdBrgWithKeluarAfterOpsik = [];
