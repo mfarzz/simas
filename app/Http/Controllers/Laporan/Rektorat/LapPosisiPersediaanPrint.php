@@ -54,39 +54,24 @@ class LapPosisiPersediaanPrint extends Controller
 
         $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
 
-        // ====================================================================
-        // BRANCH: REKTORAT (690522009KD)
-        // ====================================================================
         if ($lokasi == "690522009KD")
         {
             $this->processRektorat($tgl_akhir, $lokasi, $user_id, $lokasi);
         }
-        // ====================================================================
-        // BRANCH: RUMAH SAKIT (690522020KD)
-        // ====================================================================
         elseif ($lokasi == "690522020KD")
         {
             $this->processRumahSakit($tgl_akhir, $lokasi, $user_id, $lokasi);
         }
-        // ====================================================================
-        // BRANCH: UNIVERSITAS (690522000KD) = Rektorat + RS + semua Fakultas
-        // ====================================================================
         else if ($lokasi == "690522000KD")
         {
             $this->processRektorat($tgl_akhir, $lokasi, $user_id, null);
             $this->processRumahSakit($tgl_akhir, $lokasi, $user_id, null);
             $this->processFakultas($tgl_akhir, $lokasi, $user_id, null, null);
         }
-        // ====================================================================
-        // BRANCH: Lokasi kosong — tidak ada yang diproses
-        // ====================================================================
         else if ($lokasi == "")
         {
             // no-op
         }
-        // ====================================================================
-        // BRANCH: Per-Fakultas (lokasi = kd_lks fakultas tertentu)
-        // ====================================================================
         else
         {
             $datafakultas = FakultasModel::where('kd_lks', $lokasi)->first();
@@ -158,10 +143,8 @@ class LapPosisiPersediaanPrint extends Controller
         if($lokasi == "690522009KD")
         {
             $datalokasi = LokasiModel::where('kd_lks', $lokasi)->first();
-
             $pejabatanpimpinan = JabpenurModel::join('jabatan_rektorat','jabatan_pengesahan_rektorat.id_jabur','=','jabatan_rektorat.id_jabur')->where('id_ur', 1)->where('jabatan_pengesahan_rektorat.id_jabur', 1)->first();
             $pejabatanop = JabpenurModel::join('jabatan_rektorat','jabatan_pengesahan_rektorat.id_jabur','=','jabatan_rektorat.id_jabur')->where('id_ur', 1)->where('jabatan_pengesahan_rektorat.id_jabur', 2)->first();
-
             $tgl = ucwords(strtolower($tgl));
             PDF::SetFont('times', '', 10);
             PDF::ln(10);
@@ -184,10 +167,8 @@ class LapPosisiPersediaanPrint extends Controller
         else if($lokasi == "690522020KD")
         {
             $datarumahsakit = UnitRumahSakitModel::where('kd_lks', $lokasi)->first();
-
             $pejabatanpimpinan = JabpenursModel::join('jabatan_rumah_sakit','jabatan_pengesahan_rumah_sakit.id_jaburs','=','jabatan_rumah_sakit.id_jaburs')->where('id_urs', $datarumahsakit->id_urs)->where('jabatan_pengesahan_rumah_sakit.id_jaburs', 1)->first();
             $pejabatanop = JabpenursModel::join('jabatan_rumah_sakit','jabatan_pengesahan_rumah_sakit.id_jaburs','=','jabatan_rumah_sakit.id_jaburs')->where('id_urs', $datarumahsakit->id_urs)->where('jabatan_pengesahan_rumah_sakit.id_jaburs', 2)->first();
-
             $tgl = ucwords(strtolower($tgl));
             PDF::SetFont('times', '', 10);
             PDF::ln(10);
@@ -211,7 +192,6 @@ class LapPosisiPersediaanPrint extends Controller
         {
             $pejabatanpimpinan = JabpenuuModel::join('jabatan_universitas','jabatan_pengesahan_universitas.id_jabuni','=','jabatan_universitas.id_jabuni')->where('jabatan_pengesahan_universitas.id_jabuni', 1)->first();
             $pejabatanop = JabpenuuModel::join('jabatan_universitas','jabatan_pengesahan_universitas.id_jabuni','=','jabatan_universitas.id_jabuni')->where('jabatan_pengesahan_universitas.id_jabuni', 2)->first();
-
             $tgl = ucwords(strtolower($tgl));
             PDF::SetFont('times', '', 10);
             PDF::ln(10);
@@ -234,10 +214,8 @@ class LapPosisiPersediaanPrint extends Controller
         else
         {
             $datafakultas = FakultasModel::where('kd_lks', $lokasi)->first();
-
             $pejabatanpimpinan = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $datafakultas->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 1)->first();
             $pejabatanop = JabpenfkModel::join('jabatan_fakultas','jabatan_pengesahan_fakultas.id_jabfk','=','jabatan_fakultas.id_jabfk')->where('id_fk', $datafakultas->id_fk)->where('jabatan_pengesahan_fakultas.id_jabfk', 2)->first();
-
             $tgl = ucwords(strtolower($tgl));
             PDF::SetFont('times', '', 10);
             PDF::ln(10);
@@ -261,157 +239,194 @@ class LapPosisiPersediaanPrint extends Controller
         PDF::Output('laporan_persedian.pdf');
     }
 
-    // =========================================================================
-    // HELPER: Proses barang_masuk_rektorat
-    //   $kdLksFilter = string  → filter WHERE kd_lks = ? (branch Rektorat)
-    //   $kdLksFilter = null    → tanpa filter kd_lks (branch Universitas)
-    // =========================================================================
-    private function processRektorat(string $tglAkhir, string $kd_lks_insert, int $userId, ?string $kdLksFilter): void
+    /**
+     * Proses barang_masuk_rektorat — logika IDENTIK dengan kode asli,
+     * tapi data di-prefetch sebelum loop untuk menghindari N+1 queries.
+     */
+    private function processRektorat(string $tgl_akhir, string $lokasi, int $user_id, ?string $kdLksFilter): void
     {
-        // 1. Ambil semua barang masuk rektorat
-        $q = BarangMasukRektoratModel::where('tglperolehan_bmr', '<=', $tglAkhir)
+        $q = BarangMasukRektoratModel::where('tglperolehan_bmr', '<=', $tgl_akhir)
             ->orderBy('tglperolehan_bmr', 'asc');
         if ($kdLksFilter !== null) {
-            $q->where('kd_lks', $kdLksFilter);
+            $q->where('kd_lks', '=', $kdLksFilter);
         }
-        $rows = $q->get();
-        if ($rows->isEmpty()) return;
+        $databarangmasukrektorat = $q->get();
+        if ($databarangmasukrektorat->isEmpty()) return;
 
-        $allIdBmr  = $rows->pluck('id_bmr')->all();
-        $allKdBrg  = $rows->pluck('kd_brg')->unique()->values()->all();
+        // --- PRE-FETCH semua data yang dibutuhkan ---
+        $allKdBrg = $databarangmasukrektorat->pluck('kd_brg')->unique()->values()->all();
+        $allIdBmr = $databarangmasukrektorat->pluck('id_bmr')->all();
 
-        // 2a. Cek kd_brg mana yang punya opsik valid (status=1)
-        $kdBrgWithOpsik = DB::table('opsik_rektorat_detail as od')
-            ->join('opsik_rektorat as o', 'od.id_opur', '=', 'o.id_opur')
-            ->whereIn('od.kd_brg', $allKdBrg)
-            ->where('o.tgl_opur', '<=', $tglAkhir)
-            ->where('o.status_opur', 1)
-            ->distinct()
-            ->pluck('od.kd_brg')
-            ->all();
+        // Opsik count per kd_brg (status=1)
+        $opsikCounts = DB::table('opsik_rektorat_detail')
+            ->join('opsik_rektorat', 'opsik_rektorat_detail.id_opur', '=', 'opsik_rektorat.id_opur')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->where('tgl_opur', '<=', $tgl_akhir)
+            ->where('status_opur', '=', 1)
+            ->selectRaw('kd_brg, COUNT(*) as cnt')
+            ->groupBy('kd_brg')
+            ->pluck('cnt', 'kd_brg');
 
-        // 2b. Ambil opsik TERBARU per kd_brg TANPA filter status (sesuai kode asli)
-        $opsikSnap = collect();
-        if (!empty($kdBrgWithOpsik)) {
-            $opsikSnap = DB::table('opsik_rektorat_detail as od')
-                ->join('opsik_rektorat as o', 'od.id_opur', '=', 'o.id_opur')
-                ->whereIn('od.kd_brg', $kdBrgWithOpsik)
-                ->where('o.tgl_opur', '<=', $tglAkhir)
-                ->orderBy('o.tgl_opur', 'desc')
-                ->select('od.id_opurdet', 'od.kd_brg', 'o.tgl_opur')
-                ->get()
-                ->groupBy('kd_brg')
-                ->map(fn($g) => $g->first());
-        }
+        // Opsik terbaru per kd_brg TANPA filter status (sesuai kode asli)
+        $opsikLatest = DB::table('opsik_rektorat_detail')
+            ->join('opsik_rektorat', 'opsik_rektorat_detail.id_opur', '=', 'opsik_rektorat.id_opur')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->where('tgl_opur', '<=', $tgl_akhir)
+            ->orderBy('tgl_opur', 'desc')
+            ->select('id_opurdet', 'kd_brg', 'tgl_opur')
+            ->get()
+            ->groupBy('kd_brg')
+            ->map(fn($g) => $g->first());
 
-        // 3. Cek kd_brg yang ada barang keluar SETELAH tgl opsik
-        //    Sesuai asli: cek count(bkr > tgl_opur), pakai barang_keluar_rektorat header
-        $kdBrgWithKeluarAfterOpsik = [];
-        if ($opsikSnap->isNotEmpty()) {
-            $keluarMaxPerKdBrg = DB::table('barang_keluar_rektorat')
-                ->whereIn('kd_brg', $opsikSnap->keys()->all())
-                ->select('kd_brg', DB::raw('MAX(tglambil_bkr) as max_tgl'))
-                ->groupBy('kd_brg')
-                ->pluck('max_tgl', 'kd_brg');
-            foreach ($opsikSnap as $kdBrg => $snap) {
-                $max = $keluarMaxPerKdBrg[$kdBrg] ?? null;
-                $kdBrgWithKeluarAfterOpsik[$kdBrg] = ($max !== null && $max > $snap->tgl_opur);
-            }
-        }
+        // Keluar count per kd_brg (untuk cek ada/tidaknya keluar setelah opsik)
+        // Kita ambil semua header keluar, grouped by kd_brg
+        $keluarHeaders = DB::table('barang_keluar_rektorat')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->select('kd_brg', 'tglambil_bkr')
+            ->get()
+            ->groupBy('kd_brg');
 
-        // 4. Pre-fetch detail item opsik dari VIEW (untuk yg ada keluar setelah opsik)
-        //    Sesuai asli: WHERE jmlh_opurdetitm > 0
-        $allOpurDetIds = $opsikSnap->pluck('id_opurdet')->filter()->all();
-        $viewItems = collect();
+        // View items per id_bmr+id_opurdet
+        $allOpurDetIds = $opsikLatest->pluck('id_opurdet')->filter()->all();
+        $viewItemsAll = collect();
         if (!empty($allOpurDetIds)) {
-            $viewItems = DB::table('v_opfik_rektorat_detail_item as vi')
-                ->join('barang_masuk_rektorat as bmr', 'vi.id_bmr', '=', 'bmr.id_bmr')
-                ->whereIn('vi.id_bmr', $allIdBmr)
-                ->whereIn('vi.id_opurdet', $allOpurDetIds)
-                ->where('vi.jmlh_opurdetitm', '>', 0)
-                ->select('vi.id_bmr', 'vi.id_opurdet', 'vi.jmlh_opurdetitm', 'bmr.hrg_bmr')
+            $viewItemsAll = DB::table('v_opfik_rektorat_detail_item')
+                ->join('barang_masuk_rektorat', 'v_opfik_rektorat_detail_item.id_bmr', '=', 'barang_masuk_rektorat.id_bmr')
+                ->whereIn('v_opfik_rektorat_detail_item.id_bmr', $allIdBmr)
+                ->whereIn('id_opurdet', $allOpurDetIds)
+                ->where('jmlh_opurdetitm', '>', 0)
                 ->get()
-                ->groupBy('id_bmr');
+                ->groupBy(fn($r) => $r->id_bmr . '_' . $r->id_opurdet);
         }
 
-        // 5. Pre-fetch detail item opsik dari TABEL (untuk yg tidak ada keluar setelah opsik)
-        $tableItems = collect();
+        // Table items per id_bmr+id_opurdet
+        $tableItemsAll = collect();
         if (!empty($allOpurDetIds)) {
-            $tableItems = DB::table('opfik_rektorat_detail_item as oi')
-                ->join('barang_masuk_rektorat as bmr', 'oi.id_bmr', '=', 'bmr.id_bmr')
-                ->whereIn('oi.id_bmr', $allIdBmr)
-                ->whereIn('oi.id_opurdet', $allOpurDetIds)
-                ->select('oi.id_bmr', 'oi.id_opurdet', 'oi.jmlh_opurdetitm', 'bmr.hrg_bmr')
+            $tableItemsAll = DB::table('opfik_rektorat_detail_item')
+                ->join('barang_masuk_rektorat', 'opfik_rektorat_detail_item.id_bmr', '=', 'barang_masuk_rektorat.id_bmr')
+                ->whereIn('opfik_rektorat_detail_item.id_bmr', $allIdBmr)
+                ->whereIn('id_opurdet', $allOpurDetIds)
                 ->get()
-                ->groupBy('id_bmr');
+                ->groupBy(fn($r) => $r->id_bmr . '_' . $r->id_opurdet);
         }
 
-        // 6. Pre-fetch semua barang keluar detail yang relevan untuk case OPSIK
-        //    Sesuai asli: whereBetween [tgl_opur, tgl_akhir], eksklusif tgl_akhir (cek != tgl_akhir di loop)
-        //    Kita ambil semua < tgl_akhir dulu, filter >= tgl_opur di PHP
-        $keluarRowsForOpsik = DB::table('barang_keluar_rektorat_detail as d')
-            ->join('barang_keluar_rektorat as h', 'd.id_bkr', '=', 'h.id_bkr')
-            ->whereIn('d.id_bmr', $allIdBmr)
-            ->where('h.tglambil_bkr', '<', $tglAkhir)   // eksklusif tgl_akhir (sesuai != tgl_akhir asli)
-            ->select('d.id_bmr', 'd.jmlh_bkrd', 'h.tglambil_bkr')
+        // Keluar detail per id_bmr (semua tanggal, kita filter di PHP)
+        $keluarDetailAll = DB::table('barang_keluar_rektorat_detail')
+            ->join('barang_keluar_rektorat', 'barang_keluar_rektorat_detail.id_bkr', '=', 'barang_keluar_rektorat.id_bkr')
+            ->whereIn('barang_keluar_rektorat_detail.id_bmr', $allIdBmr)
+            ->select('barang_keluar_rektorat_detail.id_bmr', 'barang_keluar_rektorat_detail.jmlh_bkrd', 'barang_keluar_rektorat.tglambil_bkr')
             ->get()
             ->groupBy('id_bmr');
 
-        // 7. Pre-fetch SUM keluar s.d. tgl_akhir (inklusif) untuk case TANPA opsik
-        $keluarSumNoOpsik = DB::table('barang_keluar_rektorat_detail as d')
-            ->join('barang_keluar_rektorat as h', 'd.id_bkr', '=', 'h.id_bkr')
-            ->whereIn('d.id_bmr', $allIdBmr)
-            ->where('h.tglambil_bkr', '<=', $tglAkhir)
-            ->selectRaw('d.id_bmr, COALESCE(SUM(d.jmlh_bkrd), 0) as total')
-            ->groupBy('d.id_bmr')
-            ->pluck('total', 'id_bmr');
-
-        // 8. Bangun batch insert
+        // --- LOOP identik dengan kode asli ---
         $batch = [];
-        $now   = now();
+        $now = now();
+        foreach ($databarangmasukrektorat as $barisbmr)
+        {
+            $jumlahopsik = $opsikCounts[$barisbmr->kd_brg] ?? 0;
+            if ($jumlahopsik >= 1)
+            {
+                $databarangopsik = $opsikLatest[$barisbmr->kd_brg] ?? null;
+                if ($databarangopsik === null) continue;
 
-        foreach ($rows as $row) {
-            $snap = $opsikSnap[$row->kd_brg] ?? null;
+                // Cek keluar setelah opsik
+                $headers = $keluarHeaders[$barisbmr->kd_brg] ?? collect();
+                $jumlahbk = $headers->where('tglambil_bkr', '>', $databarangopsik->tgl_opur)->count();
 
-            if ($snap !== null) {
-                // Ada opsik — pilih view atau tabel sesuai ada/tidaknya keluar setelah opsik
-                $adaKeluar      = $kdBrgWithKeluarAfterOpsik[$row->kd_brg] ?? false;
-                $itemCollection = $adaKeluar
-                    ? ($viewItems[$row->id_bmr] ?? collect())
-                    : ($tableItems[$row->id_bmr] ?? collect());
+                if ($jumlahbk >= 1)
+                {
+                    // VIEW items path
+                    $key = $barisbmr->id_bmr . '_' . $databarangopsik->id_opurdet;
+                    $items = $viewItemsAll[$key] ?? collect();
+                    foreach ($items as $barisopsikdetailitem)
+                    {
+                        $tjmlh_bkrd = 0;
+                        $keluarRows = $keluarDetailAll[$barisbmr->id_bmr] ?? collect();
+                        $filteredKeluar = $keluarRows->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                            return $r->tglambil_bkr >= $databarangopsik->tgl_opur && $r->tglambil_bkr <= $tgl_akhir;
+                        });
+                        foreach ($filteredKeluar as $barisbkrd)
+                        {
+                            if ($barisbkrd->tglambil_bkr != $tgl_akhir)
+                            {
+                                $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                            }
+                        }
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
+                        $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
 
-                foreach ($itemCollection as $item) {
-                    if ($item->id_opurdet != $snap->id_opurdet) continue;
-
-                    // SUM keluar antara tgl_opur dan tgl_akhir (eksklusif tgl_akhir)
-                    $keluarRows = $keluarRowsForOpsik[$row->id_bmr] ?? collect();
-                    $sumKeluar  = $keluarRows
-                        ->where('tglambil_bkr', '>=', $snap->tgl_opur)
-                        ->sum('jmlh_bkrd');
-
-                    $batch[] = [
-                        'kd_brg'     => $row->kd_brg,
-                        'sisa_tbm'   => $item->jmlh_opurdetitm - $sumKeluar,
-                        'hrg_tbm'    => $item->hrg_bmr,
-                        'kd_lks'     => $kd_lks_insert,
-                        'user_id'    => $userId,
-                        'jns_tbm'    => 1,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
+                        $batch[] = [
+                            'kd_brg' => $barisbmr->kd_brg, 'sisa_tbm' => $tjmlh_opsik,
+                            'hrg_tbm' => $hrg_bmr, 'kd_lks' => $lokasi,
+                            'user_id' => $user_id, 'jns_tbm' => 1,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ];
+                    }
                 }
-            } else {
-                // Tidak ada opsik — jmlh_awal - semua keluar s.d. tgl_akhir
-                $sumKeluar = $keluarSumNoOpsik[$row->id_bmr] ?? 0;
+                else
+                {
+                    // TABLE items path
+                    $key = $barisbmr->id_bmr . '_' . $databarangopsik->id_opurdet;
+                    $items = $tableItemsAll[$key] ?? collect();
+                    foreach ($items as $barisopsikdetailitem)
+                    {
+                        $keluarRows = $keluarDetailAll[$barisopsikdetailitem->id_bmr] ?? collect();
+                        $filteredKeluar = $keluarRows->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                            return $r->tglambil_bkr >= $databarangopsik->tgl_opur && $r->tglambil_bkr <= $tgl_akhir;
+                        });
+                        $jumlahbarangkeluar = $filteredKeluar->count();
+                        if ($jumlahbarangkeluar >= 1)
+                        {
+                            $tjmlh_bkrd = 0;
+                            // Keluar pakai id_bmr dari barisbmr (sesuai kode asli baris 151)
+                            $keluarRows2 = $keluarDetailAll[$barisbmr->id_bmr] ?? collect();
+                            $filteredKeluar2 = $keluarRows2->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                                return $r->tglambil_bkr >= $databarangopsik->tgl_opur && $r->tglambil_bkr <= $tgl_akhir;
+                            });
+                            foreach ($filteredKeluar2 as $barisbkrd)
+                            {
+                                if ($barisbkrd->tglambil_bkr != $tgl_akhir)
+                                {
+                                    $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            $tjmlh_bkrd = 0;
+                        }
+
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opurdetitm - $tjmlh_bkrd;
+                        $hrg_bmr = $barisopsikdetailitem->hrg_bmr;
+
+                        $batch[] = [
+                            'kd_brg' => $barisbmr->kd_brg, 'sisa_tbm' => $tjmlh_opsik,
+                            'hrg_tbm' => $hrg_bmr, 'kd_lks' => $lokasi,
+                            'user_id' => $user_id, 'jns_tbm' => 1,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ];
+                    }
+                }
+            }
+            else
+            {
+                // No opsik path
+                $tjmlh_bkrd = 0;
+                $keluarRows = $keluarDetailAll[$barisbmr->id_bmr] ?? collect();
+                foreach ($keluarRows as $barisbkrd)
+                {
+                    if ($barisbkrd->tglambil_bkr <= $tgl_akhir)
+                    {
+                        $tjmlh_bkrd = $barisbkrd->jmlh_bkrd + $tjmlh_bkrd;
+                    }
+                }
+                $sisa_tbmr = $barisbmr->jmlh_awal_bmr - $tjmlh_bkrd;
+
                 $batch[] = [
-                    'kd_brg'     => $row->kd_brg,
-                    'sisa_tbm'   => $row->jmlh_awal_bmr - $sumKeluar,
-                    'hrg_tbm'    => $row->hrg_bmr,
-                    'kd_lks'     => $kd_lks_insert,
-                    'user_id'    => $userId,
-                    'jns_tbm'    => 1,
-                    'created_at' => $now,
-                    'updated_at' => $now,
+                    'kd_brg' => $barisbmr->kd_brg, 'sisa_tbm' => $sisa_tbmr,
+                    'hrg_tbm' => $barisbmr->hrg_bmr, 'kd_lks' => $lokasi,
+                    'user_id' => $user_id, 'jns_tbm' => 1,
+                    'created_at' => $now, 'updated_at' => $now,
                 ];
             }
         }
@@ -421,143 +436,180 @@ class LapPosisiPersediaanPrint extends Controller
         }
     }
 
-    // =========================================================================
-    // HELPER: Proses barang_masuk_rumah_sakit
-    //   $kdLksFilter = string → filter WHERE kd_lks = ? (branch RS)
-    //   $kdLksFilter = null   → tanpa filter kd_lks (branch Universitas)
-    // =========================================================================
-    private function processRumahSakit(string $tglAkhir, string $kd_lks_insert, int $userId, ?string $kdLksFilter): void
+    /**
+     * Proses barang_masuk_rumah_sakit — logika IDENTIK dengan kode asli.
+     */
+    private function processRumahSakit(string $tgl_akhir, string $lokasi, int $user_id, ?string $kdLksFilter): void
     {
-        $q = BarangMasukRumahSakitModel::where('tglperolehan_bmrs', '<=', $tglAkhir)
+        $q = BarangMasukRumahSakitModel::where('tglperolehan_bmrs', '<=', $tgl_akhir)
             ->orderBy('tglperolehan_bmrs', 'asc');
         if ($kdLksFilter !== null) {
-            $q->where('kd_lks', $kdLksFilter);
+            $q->where('kd_lks', '=', $kdLksFilter);
         }
-        $rows = $q->get();
-        if ($rows->isEmpty()) return;
+        $databarangmasukrumahsakit = $q->get();
+        if ($databarangmasukrumahsakit->isEmpty()) return;
 
-        $allIdBmrs = $rows->pluck('id_bmrs')->all();
-        $allKdBrg  = $rows->pluck('kd_brg')->unique()->values()->all();
+        $allKdBrg = $databarangmasukrumahsakit->pluck('kd_brg')->unique()->values()->all();
+        $allIdBmrs = $databarangmasukrumahsakit->pluck('id_bmrs')->all();
 
-        // Opsik: cek existence (status=1), lalu ambil terbaru TANPA filter status
-        $kdBrgWithOpsik = DB::table('opsik_rumah_sakit_detail as od')
-            ->join('opsik_rumah_sakit as o', 'od.id_opurs', '=', 'o.id_opurs')
-            ->whereIn('od.kd_brg', $allKdBrg)
-            ->where('o.tgl_opurs', '<=', $tglAkhir)
-            ->where('o.status_opurs', 1)
-            ->distinct()
-            ->pluck('od.kd_brg')
-            ->all();
+        $opsikCounts = DB::table('opsik_rumah_sakit_detail')
+            ->join('opsik_rumah_sakit', 'opsik_rumah_sakit_detail.id_opurs', '=', 'opsik_rumah_sakit.id_opurs')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->where('tgl_opurs', '<=', $tgl_akhir)
+            ->where('status_opurs', '=', 1)
+            ->selectRaw('kd_brg, COUNT(*) as cnt')
+            ->groupBy('kd_brg')
+            ->pluck('cnt', 'kd_brg');
 
-        $opsikSnap = collect();
-        if (!empty($kdBrgWithOpsik)) {
-            $opsikSnap = DB::table('opsik_rumah_sakit_detail as od')
-                ->join('opsik_rumah_sakit as o', 'od.id_opurs', '=', 'o.id_opurs')
-                ->whereIn('od.kd_brg', $kdBrgWithOpsik)
-                ->where('o.tgl_opurs', '<=', $tglAkhir)
-                ->orderBy('o.tgl_opurs', 'desc')
-                ->select('od.id_opursdet', 'od.kd_brg', 'o.tgl_opurs')
-                ->get()
-                ->groupBy('kd_brg')
-                ->map(fn($g) => $g->first());
-        }
+        $opsikLatest = DB::table('opsik_rumah_sakit_detail')
+            ->join('opsik_rumah_sakit', 'opsik_rumah_sakit_detail.id_opurs', '=', 'opsik_rumah_sakit.id_opurs')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->where('tgl_opurs', '<=', $tgl_akhir)
+            ->orderBy('tgl_opurs', 'desc')
+            ->select('id_opursdet', 'kd_brg', 'tgl_opurs')
+            ->get()
+            ->groupBy('kd_brg')
+            ->map(fn($g) => $g->first());
 
-        $kdBrgWithKeluarAfterOpsik = [];
-        if ($opsikSnap->isNotEmpty()) {
-            $keluarMaxPerKdBrg = DB::table('barang_keluar_rumah_sakit')
-                ->whereIn('kd_brg', $opsikSnap->keys()->all())
-                ->select('kd_brg', DB::raw('MAX(tglambil_bkrs) as max_tgl'))
-                ->groupBy('kd_brg')
-                ->pluck('max_tgl', 'kd_brg');
-            foreach ($opsikSnap as $kdBrg => $snap) {
-                $max = $keluarMaxPerKdBrg[$kdBrg] ?? null;
-                $kdBrgWithKeluarAfterOpsik[$kdBrg] = ($max !== null && $max > $snap->tgl_opurs);
-            }
-        }
+        $keluarHeaders = DB::table('barang_keluar_rumah_sakit')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->select('kd_brg', 'tglambil_bkrs')
+            ->get()
+            ->groupBy('kd_brg');
 
-        $allOpursDetIds = $opsikSnap->pluck('id_opursdet')->filter()->all();
+        $allOpursDetIds = $opsikLatest->pluck('id_opursdet')->filter()->all();
 
-        $viewItems = collect();
+        $viewItemsAll = collect();
         if (!empty($allOpursDetIds)) {
-            $viewItems = DB::table('v_opfik_rumah_sakit_detail_item as vi')
-                ->join('barang_masuk_rumah_sakit as bmrs', 'vi.id_bmrs', '=', 'bmrs.id_bmrs')
-                ->whereIn('vi.id_bmrs', $allIdBmrs)
-                ->whereIn('vi.id_opursdet', $allOpursDetIds)
-                ->where('vi.jmlh_opursdetitm', '>', 0)
-                ->select('vi.id_bmrs', 'vi.id_opursdet', 'vi.jmlh_opursdetitm', 'bmrs.hrg_bmrs')
+            $viewItemsAll = DB::table('v_opfik_rumah_sakit_detail_item')
+                ->join('barang_masuk_rumah_sakit', 'v_opfik_rumah_sakit_detail_item.id_bmrs', '=', 'barang_masuk_rumah_sakit.id_bmrs')
+                ->whereIn('v_opfik_rumah_sakit_detail_item.id_bmrs', $allIdBmrs)
+                ->whereIn('id_opursdet', $allOpursDetIds)
+                ->where('jmlh_opursdetitm', '>', 0)
                 ->get()
-                ->groupBy('id_bmrs');
+                ->groupBy(fn($r) => $r->id_bmrs . '_' . $r->id_opursdet);
         }
 
-        $tableItems = collect();
+        $tableItemsAll = collect();
         if (!empty($allOpursDetIds)) {
-            $tableItems = DB::table('opfik_rumah_sakit_detail_item as oi')
-                ->join('barang_masuk_rumah_sakit as bmrs', 'oi.id_bmrs', '=', 'bmrs.id_bmrs')
-                ->whereIn('oi.id_bmrs', $allIdBmrs)
-                ->whereIn('oi.id_opursdet', $allOpursDetIds)
-                ->select('oi.id_bmrs', 'oi.id_opursdet', 'oi.jmlh_opursdetitm', 'bmrs.hrg_bmrs')
+            $tableItemsAll = DB::table('opfik_rumah_sakit_detail_item')
+                ->join('barang_masuk_rumah_sakit', 'opfik_rumah_sakit_detail_item.id_bmrs', '=', 'barang_masuk_rumah_sakit.id_bmrs')
+                ->whereIn('opfik_rumah_sakit_detail_item.id_bmrs', $allIdBmrs)
+                ->whereIn('id_opursdet', $allOpursDetIds)
                 ->get()
-                ->groupBy('id_bmrs');
+                ->groupBy(fn($r) => $r->id_bmrs . '_' . $r->id_opursdet);
         }
 
-        $keluarRowsForOpsik = DB::table('barang_keluar_rumah_sakit_detail as d')
-            ->join('barang_keluar_rumah_sakit as h', 'd.id_bkrs', '=', 'h.id_bkrs')
-            ->whereIn('d.id_bmrs', $allIdBmrs)
-            ->where('h.tglambil_bkrs', '<', $tglAkhir)
-            ->select('d.id_bmrs', 'd.jmlh_bkrsd', 'h.tglambil_bkrs')
+        $keluarDetailAll = DB::table('barang_keluar_rumah_sakit_detail')
+            ->join('barang_keluar_rumah_sakit', 'barang_keluar_rumah_sakit_detail.id_bkrs', '=', 'barang_keluar_rumah_sakit.id_bkrs')
+            ->whereIn('barang_keluar_rumah_sakit_detail.id_bmrs', $allIdBmrs)
+            ->select('barang_keluar_rumah_sakit_detail.id_bmrs', 'barang_keluar_rumah_sakit_detail.jmlh_bkrsd', 'barang_keluar_rumah_sakit.tglambil_bkrs')
             ->get()
             ->groupBy('id_bmrs');
 
-        $keluarSumNoOpsik = DB::table('barang_keluar_rumah_sakit_detail as d')
-            ->join('barang_keluar_rumah_sakit as h', 'd.id_bkrs', '=', 'h.id_bkrs')
-            ->whereIn('d.id_bmrs', $allIdBmrs)
-            ->where('h.tglambil_bkrs', '<=', $tglAkhir)
-            ->selectRaw('d.id_bmrs, COALESCE(SUM(d.jmlh_bkrsd), 0) as total')
-            ->groupBy('d.id_bmrs')
-            ->pluck('total', 'id_bmrs');
-
         $batch = [];
-        $now   = now();
+        $now = now();
+        foreach ($databarangmasukrumahsakit as $barisbmrs)
+        {
+            $jumlahopsik = $opsikCounts[$barisbmrs->kd_brg] ?? 0;
+            if ($jumlahopsik >= 1)
+            {
+                $databarangopsik = $opsikLatest[$barisbmrs->kd_brg] ?? null;
+                if ($databarangopsik === null) continue;
 
-        foreach ($rows as $row) {
-            $snap = $opsikSnap[$row->kd_brg] ?? null;
+                $headers = $keluarHeaders[$barisbmrs->kd_brg] ?? collect();
+                $jumlahbk = $headers->where('tglambil_bkrs', '>', $databarangopsik->tgl_opurs)->count();
 
-            if ($snap !== null) {
-                $adaKeluar      = $kdBrgWithKeluarAfterOpsik[$row->kd_brg] ?? false;
-                $itemCollection = $adaKeluar
-                    ? ($viewItems[$row->id_bmrs] ?? collect())
-                    : ($tableItems[$row->id_bmrs] ?? collect());
+                if ($jumlahbk >= 1)
+                {
+                    $key = $barisbmrs->id_bmrs . '_' . $databarangopsik->id_opursdet;
+                    $items = $viewItemsAll[$key] ?? collect();
+                    foreach ($items as $barisopsikdetailitem)
+                    {
+                        // Bug asli line 267: pakai $tjmlh_bkrd bukan $tjmlh_bkrsd
+                        $tjmlh_bkrsd = 0;
+                        $keluarRows = $keluarDetailAll[$barisbmrs->id_bmrs] ?? collect();
+                        $filteredKeluar = $keluarRows->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                            return $r->tglambil_bkrs >= $databarangopsik->tgl_opurs && $r->tglambil_bkrs <= $tgl_akhir;
+                        });
+                        foreach ($filteredKeluar as $barisbkrsd)
+                        {
+                            if ($barisbkrsd->tglambil_bkrs != $tgl_akhir)
+                            {
+                                // Replicate original bug: assigns wrong var so $tjmlh_bkrsd stays 0
+                                $tjmlh_bkrd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                            }
+                        }
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
 
-                foreach ($itemCollection as $item) {
-                    if ($item->id_opursdet != $snap->id_opursdet) continue;
-
-                    $keluarRows = $keluarRowsForOpsik[$row->id_bmrs] ?? collect();
-                    $sumKeluar  = $keluarRows
-                        ->where('tglambil_bkrs', '>=', $snap->tgl_opurs)
-                        ->sum('jmlh_bkrsd');
-
-                    $batch[] = [
-                        'kd_brg'     => $row->kd_brg,
-                        'sisa_tbm'   => $item->jmlh_opursdetitm - $sumKeluar,
-                        'hrg_tbm'    => $item->hrg_bmrs,
-                        'kd_lks'     => $kd_lks_insert,
-                        'user_id'    => $userId,
-                        'jns_tbm'    => 1,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
+                        $batch[] = [
+                            'kd_brg' => $barisbmrs->kd_brg, 'sisa_tbm' => $tjmlh_opsik,
+                            'hrg_tbm' => $barisopsikdetailitem->hrg_bmrs, 'kd_lks' => $lokasi,
+                            'user_id' => $user_id, 'jns_tbm' => 1,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ];
+                    }
                 }
-            } else {
-                $sumKeluar = $keluarSumNoOpsik[$row->id_bmrs] ?? 0;
+                else
+                {
+                    $key = $barisbmrs->id_bmrs . '_' . $databarangopsik->id_opursdet;
+                    $items = $tableItemsAll[$key] ?? collect();
+                    foreach ($items as $barisopsikdetailitem)
+                    {
+                        $keluarRows = $keluarDetailAll[$barisopsikdetailitem->id_bmrs] ?? collect();
+                        $filteredKeluar = $keluarRows->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                            return $r->tglambil_bkrs >= $databarangopsik->tgl_opurs && $r->tglambil_bkrs <= $tgl_akhir;
+                        });
+                        $jumlahbarangkeluar = $filteredKeluar->count();
+                        if ($jumlahbarangkeluar >= 1)
+                        {
+                            $tjmlh_bkrsd = 0;
+                            $keluarRows2 = $keluarDetailAll[$barisbmrs->id_bmrs] ?? collect();
+                            $filteredKeluar2 = $keluarRows2->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                                return $r->tglambil_bkrs >= $databarangopsik->tgl_opurs && $r->tglambil_bkrs <= $tgl_akhir;
+                            });
+                            foreach ($filteredKeluar2 as $barisbkrsd)
+                            {
+                                if ($barisbkrsd->tglambil_bkrs != $tgl_akhir)
+                                {
+                                    $tjmlh_bkrsd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            $tjmlh_bkrsd = 0;
+                        }
+
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opursdetitm - $tjmlh_bkrsd;
+
+                        $batch[] = [
+                            'kd_brg' => $barisbmrs->kd_brg, 'sisa_tbm' => $tjmlh_opsik,
+                            'hrg_tbm' => $barisopsikdetailitem->hrg_bmrs, 'kd_lks' => $lokasi,
+                            'user_id' => $user_id, 'jns_tbm' => 1,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ];
+                    }
+                }
+            }
+            else
+            {
+                $tjmlh_bkrsd = 0;
+                $keluarRows = $keluarDetailAll[$barisbmrs->id_bmrs] ?? collect();
+                foreach ($keluarRows as $barisbkrsd)
+                {
+                    if ($barisbkrsd->tglambil_bkrs <= $tgl_akhir)
+                    {
+                        $tjmlh_bkrsd = $barisbkrsd->jmlh_bkrsd + $tjmlh_bkrsd;
+                    }
+                }
+                $sisa_tbmrs = $barisbmrs->jmlh_awal_bmrs - $tjmlh_bkrsd;
+
                 $batch[] = [
-                    'kd_brg'     => $row->kd_brg,
-                    'sisa_tbm'   => $row->jmlh_awal_bmrs - $sumKeluar,
-                    'hrg_tbm'    => $row->hrg_bmrs,
-                    'kd_lks'     => $kd_lks_insert,
-                    'user_id'    => $userId,
-                    'jns_tbm'    => 1,
-                    'created_at' => $now,
-                    'updated_at' => $now,
+                    'kd_brg' => $barisbmrs->kd_brg, 'sisa_tbm' => $sisa_tbmrs,
+                    'hrg_tbm' => $barisbmrs->hrg_bmrs, 'kd_lks' => $lokasi,
+                    'user_id' => $user_id, 'jns_tbm' => 1,
+                    'created_at' => $now, 'updated_at' => $now,
                 ];
             }
         }
@@ -567,155 +619,194 @@ class LapPosisiPersediaanPrint extends Controller
         }
     }
 
-    // =========================================================================
-    // HELPER: Proses barang_masuk_fakultas
-    //   $kdLksFilter = string → filter WHERE kd_lks = ? (branch per-Fakultas)
-    //   $kdLksFilter = null   → tanpa filter kd_lks (branch Universitas)
-    //   $idFkFilter  = int    → filter opsik/keluar by id_fk (branch per-Fakultas)
-    //   $idFkFilter  = null   → tanpa filter id_fk (branch Universitas)
-    // =========================================================================
-    private function processFakultas(string $tglAkhir, string $kd_lks_insert, int $userId, ?string $kdLksFilter, ?int $idFkFilter): void
+    /**
+     * Proses barang_masuk_fakultas — logika IDENTIK dengan kode asli.
+     * $idFkFilter digunakan untuk opsik & keluar header check (per-Fakultas).
+     */
+    private function processFakultas(string $tgl_akhir, string $lokasi, int $user_id, ?string $kdLksFilter, ?int $idFkFilter): void
     {
-        $q = BarangMasukFakultasModel::where('tglperolehan_bmf', '<=', $tglAkhir)
+        $q = BarangMasukFakultasModel::where('tglperolehan_bmf', '<=', $tgl_akhir)
             ->orderBy('tglperolehan_bmf', 'asc');
         if ($kdLksFilter !== null) {
-            $q->where('kd_lks', $kdLksFilter);
+            $q->where('kd_lks', '=', $kdLksFilter);
         }
-        $rows = $q->get();
-        if ($rows->isEmpty()) return;
+        $databarangmasukfakultas = $q->get();
+        if ($databarangmasukfakultas->isEmpty()) return;
 
-        $allIdBmf = $rows->pluck('id_bmf')->all();
-        $allKdBrg = $rows->pluck('kd_brg')->unique()->values()->all();
+        $allKdBrg = $databarangmasukfakultas->pluck('kd_brg')->unique()->values()->all();
+        $allIdBmf = $databarangmasukfakultas->pluck('id_bmf')->all();
 
-        // Opsik: cek existence (status=1), lalu ambil terbaru TANPA filter status
-        $existQ = DB::table('opsik_fakultas_detail as od')
-            ->join('opsik_fakultas as o', 'od.id_opfk', '=', 'o.id_opfk')
-            ->whereIn('od.kd_brg', $allKdBrg)
-            ->where('o.tgl_opfk', '<=', $tglAkhir)
-            ->where('o.status_opfk', 1);
+        // Opsik count (status=1)
+        $opsikCountQ = DB::table('opsik_fakultas_detail')
+            ->join('opsik_fakultas', 'opsik_fakultas_detail.id_opfk', '=', 'opsik_fakultas.id_opfk')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->where('tgl_opfk', '<=', $tgl_akhir)
+            ->where('status_opfk', '=', 1);
         if ($idFkFilter !== null) {
-            $existQ->where('o.id_fk', $idFkFilter);
+            $opsikCountQ->where('id_fk', '=', $idFkFilter);
         }
-        $kdBrgWithOpsik = $existQ->distinct()->pluck('od.kd_brg')->all();
+        $opsikCounts = $opsikCountQ
+            ->selectRaw('kd_brg, COUNT(*) as cnt')
+            ->groupBy('kd_brg')
+            ->pluck('cnt', 'kd_brg');
 
-        $opsikSnap = collect();
-        if (!empty($kdBrgWithOpsik)) {
-            $snapQ = DB::table('opsik_fakultas_detail as od')
-                ->join('opsik_fakultas as o', 'od.id_opfk', '=', 'o.id_opfk')
-                ->whereIn('od.kd_brg', $kdBrgWithOpsik)
-                ->where('o.tgl_opfk', '<=', $tglAkhir);
-            if ($idFkFilter !== null) {
-                $snapQ->where('o.id_fk', $idFkFilter);
-            }
-            $opsikSnap = $snapQ
-                ->orderBy('o.tgl_opfk', 'desc')
-                ->select('od.id_opfkdet', 'od.kd_brg', 'o.tgl_opfk')
-                ->get()
-                ->groupBy('kd_brg')
-                ->map(fn($g) => $g->first());
+        // Opsik terbaru TANPA filter status
+        $opsikLatestQ = DB::table('opsik_fakultas_detail')
+            ->join('opsik_fakultas', 'opsik_fakultas_detail.id_opfk', '=', 'opsik_fakultas.id_opfk')
+            ->whereIn('kd_brg', $allKdBrg)
+            ->where('tgl_opfk', '<=', $tgl_akhir);
+        if ($idFkFilter !== null) {
+            $opsikLatestQ->where('id_fk', '=', $idFkFilter);
         }
+        $opsikLatest = $opsikLatestQ
+            ->orderBy('tgl_opfk', 'desc')
+            ->select('id_opfkdet', 'kd_brg', 'tgl_opfk')
+            ->get()
+            ->groupBy('kd_brg')
+            ->map(fn($g) => $g->first());
 
-        // Cek keluar setelah opsik (dengan filter id_fk jika per-Fakultas)
-        $kdBrgWithKeluarAfterOpsik = [];
-        if ($opsikSnap->isNotEmpty()) {
-            $bkfQ = DB::table('barang_keluar_fakultas')
-                ->whereIn('kd_brg', $opsikSnap->keys()->all());
-            if ($idFkFilter !== null) {
-                $bkfQ->where('id_fk', $idFkFilter);
-            }
-            $keluarMaxPerKdBrg = $bkfQ
-                ->select('kd_brg', DB::raw('MAX(tglambil_bkf) as max_tgl'))
-                ->groupBy('kd_brg')
-                ->pluck('max_tgl', 'kd_brg');
-            foreach ($opsikSnap as $kdBrg => $snap) {
-                $max = $keluarMaxPerKdBrg[$kdBrg] ?? null;
-                $kdBrgWithKeluarAfterOpsik[$kdBrg] = ($max !== null && $max > $snap->tgl_opfk);
-            }
+        // Keluar headers
+        $keluarHeaderQ = DB::table('barang_keluar_fakultas')
+            ->whereIn('kd_brg', $allKdBrg);
+        if ($idFkFilter !== null) {
+            $keluarHeaderQ->where('id_fk', '=', $idFkFilter);
         }
+        $keluarHeaders = $keluarHeaderQ
+            ->select('kd_brg', 'tglambil_bkf')
+            ->get()
+            ->groupBy('kd_brg');
 
-        $allOpfkDetIds = $opsikSnap->pluck('id_opfkdet')->filter()->all();
+        $allOpfkDetIds = $opsikLatest->pluck('id_opfkdet')->filter()->all();
 
-        $viewItems = collect();
+        $viewItemsAll = collect();
         if (!empty($allOpfkDetIds)) {
-            $viewItems = DB::table('v_opfik_fakultas_detail_item as vi')
-                ->join('barang_masuk_fakultas as bmf', 'vi.id_bmf', '=', 'bmf.id_bmf')
-                ->whereIn('vi.id_bmf', $allIdBmf)
-                ->whereIn('vi.id_opfkdet', $allOpfkDetIds)
-                ->where('vi.jmlh_opfkdetitm', '>', 0)
-                ->select('vi.id_bmf', 'vi.id_opfkdet', 'vi.jmlh_opfkdetitm', 'bmf.hrg_bmf')
+            $viewItemsAll = DB::table('v_opfik_fakultas_detail_item')
+                ->join('barang_masuk_fakultas', 'v_opfik_fakultas_detail_item.id_bmf', '=', 'barang_masuk_fakultas.id_bmf')
+                ->whereIn('v_opfik_fakultas_detail_item.id_bmf', $allIdBmf)
+                ->whereIn('id_opfkdet', $allOpfkDetIds)
+                ->where('jmlh_opfkdetitm', '>', 0)
                 ->get()
-                ->groupBy('id_bmf');
+                ->groupBy(fn($r) => $r->id_bmf . '_' . $r->id_opfkdet);
         }
 
-        $tableItems = collect();
+        $tableItemsAll = collect();
         if (!empty($allOpfkDetIds)) {
-            $tableItems = DB::table('opfik_fakultas_detail_item as oi')
-                ->join('barang_masuk_fakultas as bmf', 'oi.id_bmf', '=', 'bmf.id_bmf')
-                ->whereIn('oi.id_bmf', $allIdBmf)
-                ->whereIn('oi.id_opfkdet', $allOpfkDetIds)
-                ->select('oi.id_bmf', 'oi.id_opfkdet', 'oi.jmlh_opfkdetitm', 'bmf.hrg_bmf')
+            $tableItemsAll = DB::table('opfik_fakultas_detail_item')
+                ->join('barang_masuk_fakultas', 'opfik_fakultas_detail_item.id_bmf', '=', 'barang_masuk_fakultas.id_bmf')
+                ->whereIn('opfik_fakultas_detail_item.id_bmf', $allIdBmf)
+                ->whereIn('id_opfkdet', $allOpfkDetIds)
                 ->get()
-                ->groupBy('id_bmf');
+                ->groupBy(fn($r) => $r->id_bmf . '_' . $r->id_opfkdet);
         }
 
-        $keluarRowsForOpsik = DB::table('barang_keluar_fakultas_detail as d')
-            ->join('barang_keluar_fakultas as h', 'd.id_bkf', '=', 'h.id_bkf')
-            ->whereIn('d.id_bmf', $allIdBmf)
-            ->where('h.tglambil_bkf', '<', $tglAkhir)
-            ->select('d.id_bmf', 'd.jmlh_bkfd', 'h.tglambil_bkf')
+        $keluarDetailAll = DB::table('barang_keluar_fakultas_detail')
+            ->join('barang_keluar_fakultas', 'barang_keluar_fakultas_detail.id_bkf', '=', 'barang_keluar_fakultas.id_bkf')
+            ->whereIn('barang_keluar_fakultas_detail.id_bmf', $allIdBmf)
+            ->select('barang_keluar_fakultas_detail.id_bmf', 'barang_keluar_fakultas_detail.jmlh_bkfd', 'barang_keluar_fakultas.tglambil_bkf')
             ->get()
             ->groupBy('id_bmf');
 
-        $keluarSumNoOpsik = DB::table('barang_keluar_fakultas_detail as d')
-            ->join('barang_keluar_fakultas as h', 'd.id_bkf', '=', 'h.id_bkf')
-            ->whereIn('d.id_bmf', $allIdBmf)
-            ->where('h.tglambil_bkf', '<=', $tglAkhir)
-            ->selectRaw('d.id_bmf, COALESCE(SUM(d.jmlh_bkfd), 0) as total')
-            ->groupBy('d.id_bmf')
-            ->pluck('total', 'id_bmf');
-
         $batch = [];
-        $now   = now();
+        $now = now();
+        foreach ($databarangmasukfakultas as $barisbmf)
+        {
+            $jumlahopsik = $opsikCounts[$barisbmf->kd_brg] ?? 0;
+            if ($jumlahopsik >= 1)
+            {
+                $databarangopsik = $opsikLatest[$barisbmf->kd_brg] ?? null;
+                if ($databarangopsik === null) continue;
 
-        foreach ($rows as $row) {
-            $snap = $opsikSnap[$row->kd_brg] ?? null;
+                $headers = $keluarHeaders[$barisbmf->kd_brg] ?? collect();
+                $jumlahbk = $headers->where('tglambil_bkf', '>', $databarangopsik->tgl_opfk)->count();
 
-            if ($snap !== null) {
-                $adaKeluar      = $kdBrgWithKeluarAfterOpsik[$row->kd_brg] ?? false;
-                $itemCollection = $adaKeluar
-                    ? ($viewItems[$row->id_bmf] ?? collect())
-                    : ($tableItems[$row->id_bmf] ?? collect());
+                if ($jumlahbk >= 1)
+                {
+                    $key = $barisbmf->id_bmf . '_' . $databarangopsik->id_opfkdet;
+                    $items = $viewItemsAll[$key] ?? collect();
+                    foreach ($items as $barisopsikdetailitem)
+                    {
+                        $tjmlh_bkfd = 0;
+                        $keluarRows = $keluarDetailAll[$barisbmf->id_bmf] ?? collect();
+                        $filteredKeluar = $keluarRows->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                            return $r->tglambil_bkf >= $databarangopsik->tgl_opfk && $r->tglambil_bkf <= $tgl_akhir;
+                        });
+                        foreach ($filteredKeluar as $barisbkfd)
+                        {
+                            if ($barisbkfd->tglambil_bkf != $tgl_akhir)
+                            {
+                                $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                            }
+                        }
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
 
-                foreach ($itemCollection as $item) {
-                    if ($item->id_opfkdet != $snap->id_opfkdet) continue;
-
-                    $keluarRows = $keluarRowsForOpsik[$row->id_bmf] ?? collect();
-                    $sumKeluar  = $keluarRows
-                        ->where('tglambil_bkf', '>=', $snap->tgl_opfk)
-                        ->sum('jmlh_bkfd');
-
-                    $batch[] = [
-                        'kd_brg'     => $row->kd_brg,
-                        'sisa_tbm'   => $item->jmlh_opfkdetitm - $sumKeluar,
-                        'hrg_tbm'    => $item->hrg_bmf,
-                        'kd_lks'     => $kd_lks_insert,
-                        'user_id'    => $userId,
-                        'jns_tbm'    => 1,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
+                        $batch[] = [
+                            'kd_brg' => $barisbmf->kd_brg, 'sisa_tbm' => $tjmlh_opsik,
+                            'hrg_tbm' => $barisopsikdetailitem->hrg_bmf, 'kd_lks' => $lokasi,
+                            'user_id' => $user_id, 'jns_tbm' => 1,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ];
+                    }
                 }
-            } else {
-                $sumKeluar = $keluarSumNoOpsik[$row->id_bmf] ?? 0;
+                else
+                {
+                    $key = $barisbmf->id_bmf . '_' . $databarangopsik->id_opfkdet;
+                    $items = $tableItemsAll[$key] ?? collect();
+                    foreach ($items as $barisopsikdetailitem)
+                    {
+                        $keluarRows = $keluarDetailAll[$barisopsikdetailitem->id_bmf] ?? collect();
+                        $filteredKeluar = $keluarRows->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                            return $r->tglambil_bkf >= $databarangopsik->tgl_opfk && $r->tglambil_bkf <= $tgl_akhir;
+                        });
+                        $jumlahbarangkeluar = $filteredKeluar->count();
+                        if ($jumlahbarangkeluar >= 1)
+                        {
+                            $tjmlh_bkfd = 0;
+                            $keluarRows2 = $keluarDetailAll[$barisbmf->id_bmf] ?? collect();
+                            $filteredKeluar2 = $keluarRows2->filter(function($r) use ($databarangopsik, $tgl_akhir) {
+                                return $r->tglambil_bkf >= $databarangopsik->tgl_opfk && $r->tglambil_bkf <= $tgl_akhir;
+                            });
+                            foreach ($filteredKeluar2 as $barisbkfd)
+                            {
+                                if ($barisbkfd->tglambil_bkf != $tgl_akhir)
+                                {
+                                    $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            $tjmlh_bkfd = 0;
+                        }
+
+                        $tjmlh_opsik = $barisopsikdetailitem->jmlh_opfkdetitm - $tjmlh_bkfd;
+
+                        $batch[] = [
+                            'kd_brg' => $barisbmf->kd_brg, 'sisa_tbm' => $tjmlh_opsik,
+                            'hrg_tbm' => $barisopsikdetailitem->hrg_bmf, 'kd_lks' => $lokasi,
+                            'user_id' => $user_id, 'jns_tbm' => 1,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ];
+                    }
+                }
+            }
+            else
+            {
+                $tjmlh_bkfd = 0;
+                $keluarRows = $keluarDetailAll[$barisbmf->id_bmf] ?? collect();
+                foreach ($keluarRows as $barisbkfd)
+                {
+                    if ($barisbkfd->tglambil_bkf <= $tgl_akhir)
+                    {
+                        $tjmlh_bkfd = $barisbkfd->jmlh_bkfd + $tjmlh_bkfd;
+                    }
+                }
+                $sisa_tbmf = $barisbmf->jmlh_awal_bmf - $tjmlh_bkfd;
+
                 $batch[] = [
-                    'kd_brg'     => $row->kd_brg,
-                    'sisa_tbm'   => $row->jmlh_awal_bmf - $sumKeluar,
-                    'hrg_tbm'    => $row->hrg_bmf,
-                    'kd_lks'     => $kd_lks_insert,
-                    'user_id'    => $userId,
-                    'jns_tbm'    => 1,
-                    'created_at' => $now,
-                    'updated_at' => $now,
+                    'kd_brg' => $barisbmf->kd_brg, 'sisa_tbm' => $sisa_tbmf,
+                    'hrg_tbm' => $barisbmf->hrg_bmf, 'kd_lks' => $lokasi,
+                    'user_id' => $user_id, 'jns_tbm' => 1,
+                    'created_at' => $now, 'updated_at' => $now,
                 ];
             }
         }
